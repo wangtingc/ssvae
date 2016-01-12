@@ -1,0 +1,2 @@
+2016-01-11: modify preprocess script to filt '<br />' in sentences and rebuild proc data. copy them from personal PC to cil-server and 71.5
+2016-01-12: i modified proc data at 2016-01-11 however i forgot to rebuild the embedding file with glove. so i rebuild them in my personal PC and scp them to both cil-server and 71.5

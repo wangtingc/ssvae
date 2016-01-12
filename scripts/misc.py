@@ -7,4 +7,16 @@ def binarize_labels(labels, num_classes):
     return labels_oh
 
 
+def filter_words(x, n_words):
+    '''
+    to filter the words with index > n_words
+    predictions:
+        type of x is list
+        the index of <UNK> in dict is 1
+    '''
 
+    new_x = []
+    for s in x:
+        new_x.append([idx if idx < n_words else 1 for idx in s])
+
+    return new_x

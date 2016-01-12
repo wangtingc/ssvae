@@ -97,34 +97,105 @@ class SamplerLayer(layers.MergeLayer):
         return []
 
 
+
+# this class is for getting the hidden output of sentence classification
+# . Or used for sentence encoder
+# there is a doubt wether mean operation is better for encoder
+class SentMeanEncoder(layers.MergeLayer):
+    def __init__(self, incomings,
+                 num_units,
+                 ):
+        '''
+        params:
+            incomings: input layers, [sent_input, mask_input]
+            num_units: num_units for inner lstm layer
+        '''
+        super(SentMeanEncoder, self).__init__(incomings)
+        sent_input_layer, mask_input_layer = incomings
+        self.num_units = num_units
+        self.lstm_layer = layers.LSTMLayer(sent_input_layer,
+            num_units = self.num_units,
+            mask_input = mask_input_layer,
+            grad_clipping = 0 #to be tested
+            )
+
+
+    def get_output_for(self, inputs):
+        sent_input, mask_input =  inputs
+        lstm_output = self.lstm_layer.get_output_for(inputs)
+        lstm_mean = (lstm_output * mask_input[:, :, None]).sum(axis = 1)
+        lstm_mean = lstm_mean / mask_input.sum(axis=1)[:, None]
+        return lstm_mean
+
+
+    def get_output_shape_for(self, input_shapes):
+        return (input_shapes[0][0], input_shapes[0][2])
+
+
+    def get_params(self):
+        params = []
+        params += self.lstm_layer.get_params()
+        return params
+
+
 # this class is not lasagne format, since the output is not single and has
 # multiple costs functions.
 class SemiVAE(layers.MergeLayer):
     def __init__(self,
                  incomings,
+                 w_emb,
                  num_units_hidden_common,
                  dim_z,
-                 beta
+                 beta,
+                 num_units_hidden_rnn
                  ):
         '''
          params:
              incomings: input layers, [image, label]
+             w_emb: numpy matrix, the word embeddings 
              num_units_hidden_common: num_units_hidden for all BasicLayers.
              dim_z: the dimension of z and num_units_output for encoders BaiscLayer
+             beta: reweighted alpha
+             num_units_hidden_rnn: num_units_hidden for recurrent layers
         '''
 
         super(SemiVAE, self).__init__(incomings)
+        # random generator
         self.mrg_srng = MRG_RandomStreams()
 
-        # random generator
         self.incomings = incomings
-        self.num_classes = incomings[1].output_shape[1]
+        [sent_layer, mask_layer, label_layer] = self.incomings
+        self.num_classes = label_layer.output_shape[1]
+        self.num_words = w_emb.shape[0]
+        self.dim_emb = w_emb.shape[1]
         self.num_units_hidden_common = num_units_hidden_common
         self.dim_z = dim_z
         self.beta = beta
+        self.num_units_hidden_rnn = num_units_hidden_rnn
+        self.grad_clipping = 0 # to be tested
+            
+        # here we can try LSTMlayer and return the last output
+        # or use SentMeanEncoder (to be tested)
+        self.embed_layer = layers.EmbeddingLayer(sent_layer,
+            self.num_words,
+            self.dim_emb,
+            W = w_emb,
+            )
+        
+        self.sent_encoder = layers.LSTMLayer(self.embed_layer,
+            num_units = self.num_units_hidden_rnn,
+            mask_input = mask_layer,
+            grad_clipping = self.grad_clipping,
+            only_return_final = True,
+            )
 
-        self.concat_xy  = layers.ConcatLayer(self.incomings, axis=1)
-
+        self.concat_xy = layers.ConcatLayer(
+            [self.sent_encoder, label_layer],
+            axis = 1,
+            )
+        
+        # actually BasicLayer is just a denselayer
+        # wonder if it should be removed for simplicity
         self.encoder = BasicLayer(self.concat_xy,
             num_units_hidden = self.num_units_hidden_common,
             )
@@ -141,26 +212,31 @@ class SemiVAE(layers.MergeLayer):
             nonlinearity = nonlinearities.identity
             )
 
-        [image_input, label_input] = self.incomings
-        self.dim_image = image_input.output_shape[1]
-        print('dim_image: ', self.dim_image)
-
         # merge encoder_mu and encoder_log_var to get z.
         self.sampler = SamplerLayer([self.encoder_mu, self.encoder_log_var])
 
-        self.concat_yz = layers.ConcatLayer([label_input, self.sampler], axis=1)
-        self.decoder = BasicLayer(self.concat_yz,
-            num_units_hidden = self.num_units_hidden_common
+        self.concat_yz = layers.ConcatLayer([label_layer, self.sampler], axis=1)
+        
+        # the sentence and mask used here is different from encoder, 
+        # it is not safe to used 'embed_layer' and 'mask_layer'....
+        self.decoder = layers.LSTMLayer(self.embed_layer,
+            num_units = self.num_units_hidden_rnn,
+            hid_init = self.concat_yz,
+            mask_input = mask_layer,
+            grad_clipping = 0, 
             )
 
-        self.decoder_x = layers.DenseLayer(self.decoder,
-            num_units = self.dim_image,
-            nonlinearity = nonlinearities.sigmoid
+        self.decoder_shp = layers.ReshapeLayer(self.decoder, (-1, self.num_units_hidden_rnn))
+
+        # the batch_size and seqlen are not deterministic
+        self.decoder_x = layers.DenseLayer(self.decoder_shp,
+            num_units = self.num_words,
+            nonlinearity = nonlinearities.softmax
             )
 
-        self.classifier_helper = BasicLayer(
-            self.incomings[0],
-            num_units_hidden = self.num_units_hidden_common
+        self.classifier_helper = SentMeanEncoder(
+            [self.embed_layer, mask_layer],
+            num_units = self.num_units_hidden_rnn,
             )
 
         self.classifier = layers.DenseLayer(
@@ -175,29 +251,41 @@ class SemiVAE(layers.MergeLayer):
 
 
     def get_cost_L(self, inputs):
+        # use sent_embs not sent_idx
         # make it clear which get_output_for is used
         print('getting_cost_L')
 
         # inputs must obey the order.
-        image_input, label_input = inputs
-        encoder = self.encoder.get_output_for(self.concat_xy.get_output_for([image_input, label_input]))
-        mu_z = self.encoder_mu.get_output_for(encoder)
-        log_var_z = self.encoder_log_var.get_output_for(encoder)
+        sent_input, sent_embs, mask_input, label_input = inputs
+        #sent_embs = self.embed_layer.get_output_for(sent_input)
+        sent_enc = self.sent_encoder.get_output_for([sent_embs, mask_input])
+        enc = self.encoder.get_output_for(self.concat_xy.get_output_for([sent_enc, label_input]))
+        mu_z = self.encoder_mu.get_output_for(enc)
+        log_var_z = self.encoder_log_var.get_output_for(enc)
         z = self.sampler.get_output_for([mu_z, log_var_z])
-
-        decoder = self.decoder.get_output_for(self.concat_yz.get_output_for([label_input, z]))
-        reconstruct = self.decoder_x.get_output_for(decoder)
-
-        l_x = objectives.binary_crossentropy(reconstruct, image_input).sum(1)
+        
+        decoder_input = self.concat_yz.get_output_for([label_input, z])
+        # shift sent_embs
+        sent_embs_shifted = T.zeros_like(sent_embs)
+        sent_embs_shifted = T.set_subtensor(sent_embs_shifted[1:], sent_embs[:-1])
+        dec = self.decoder.get_output_for([sent_embs_shifted, mask_input, decoder_input])
+        pred_prob = self.decoder_x.get_output_for(dec)
+        # we do not know the batch_size and seqlen until inputs are given
+        pred_prob = pred_prob.reshape([sent_embs.shape[0] * sent_embs.shape[1], -1])
+        
+        l_x = objectives.categorical_crossentropy(pred_prob, sent_input.flatten())
+        l_x = (l_x.reshape([sent_embs.shape[0], -1]) * mask_input).sum(1)
         l_z = ((mu_z ** 2 + T.exp(log_var_z) - 1 - log_var_z) * 0.5).sum(1)
 
         cost_L = l_x + l_z
         return cost_L
 
 
-    def get_cost_U(self, image_input):
+    def get_cost_U(self, inputs):
         print('getting_cost_U')
-        prob_ys_given_x = self.classifier.get_output_for(self.classifier_helper.get_output_for(image_input))
+        sent_input, sent_embs, mask_input = inputs
+        classifier_enc = self.classifier_helper.get_output_for([sent_embs, mask_input])
+        prob_ys_given_x = self.classifier.get_output_for(classifier_enc)
 
         '''
         label_input_with = []
@@ -213,11 +301,11 @@ class SemiVAE(layers.MergeLayer):
                 weighted_cost_L += prob_ys_given_x[:, i] * cost_L_with[i]
         '''
 
-        weighted_cost_L = T.zeros([image_input.shape[0],])
+        weighted_cost_L = T.zeros([sent_embs.shape[0],])
         for i in xrange(self.num_classes):
-            label_input = T.zeros([image_input.shape[0], self.num_classes])
+            label_input = T.zeros([sent_embs.shape[0], self.num_classes])
             label_input = T.set_subtensor(label_input[:, i], 1)
-            cost_L = self.get_cost_L([image_input, label_input])
+            cost_L = self.get_cost_L([sent_input, sent_embs, mask_input, label_input])
             weighted_cost_L += prob_ys_given_x[:,i] * cost_L
 
         entropy_y_given_x = objectives.categorical_crossentropy(prob_ys_given_x, prob_ys_given_x)
@@ -228,8 +316,9 @@ class SemiVAE(layers.MergeLayer):
 
     def get_cost_C(self, inputs):
         print('getting_cost_C')
-        image_input, label_input = inputs
-        prob_ys_given_x = self.classifier.get_output_for(self.classifier_helper.get_output_for(image_input))
+        sent_input, sent_embs, mask_input, label_input = inputs
+        classifier_enc = self.classifier_helper.get_output_for([sent_embs, mask_input])
+        prob_ys_given_x = self.classifier.get_output_for(classifier_enc)
         prob_y_given_x = (prob_ys_given_x * label_input).sum(1)
         cost_C = -T.log(prob_y_given_x)
         return cost_C
@@ -241,23 +330,28 @@ class SemiVAE(layers.MergeLayer):
         return cost_L.mean() + self.beta * cost_C.mean()
 
 
-    def get_cost_for_unlabel(self, input):
-        cost_U = self.get_cost_U(input)
+    def get_cost_for_unlabel(self, inputs):
+        cost_U = self.get_cost_U(inputs)
         return cost_U.mean()
 
 
     def get_cost_together(self, inputs):
-        label_images, label_labels, unlabel_images = inputs
-        cost_for_label = self.get_cost_for_label([label_images, label_labels]) * label_images.shape[0]
-        cost_for_unlabel = self.get_cost_for_unlabel(unlabel_images) * unlabel_images.shape[0]
-        cost_together = (cost_for_label + cost_for_unlabel) / (label_images.shape[0] + unlabel_images.shape[0])
-        cost_together += self.get_cost_prior() / 50000
+        sent_l, mask_l, label, sent_u, mask_u = inputs # l for label u for unlabel
+        sent_embs_l = self.embed_layer.get_output_for(sent_l)
+        sent_embs_u = self.embed_layer.get_output_for(sent_u)
+
+        cost_for_label = self.get_cost_for_label([sent_l, sent_embs_l, mask_l, label]) * sent_l.shape[0]
+        cost_for_unlabel = self.get_cost_for_unlabel([sent_u, sent_embs_u, mask_u]) * sent_u.shape[0]
+        cost_together = (cost_for_label + cost_for_unlabel) / (sent_l.shape[0] + sent_u.shape[0])
+        cost_together += self.get_cost_prior() / 50000 # ...to be tested
         return cost_together
 
 
     def get_cost_test(self, inputs):
-        image_input, label_input = inputs
-        prob_ys_given_x = self.classifier.get_output_for(self.classifier_helper.get_output_for(image_input))
+        sent_input, mask_input, label_input = inputs
+        sent_embs = self.embed_layer.get_output_for(sent_input)
+        classifier_enc = self.classifier_helper.get_output_for([sent_embs, mask_input])
+        prob_ys_given_x = self.classifier.get_output_for(classifier_enc)
         cost_test = objectives.categorical_crossentropy(prob_ys_given_x, label_input)
         cost_acc = T.eq(T.argmax(prob_ys_given_x, axis=1), T.argmax(label_input, axis=1))
 
@@ -276,6 +370,8 @@ class SemiVAE(layers.MergeLayer):
 
     def get_params(self):
         params = []
+        params += self.embed_layer.get_params()
+        params += self.sent_encoder.get_params()
         params += self.encoder.get_params()
         params += self.encoder_mu.get_params()
         params += self.encoder_log_var.get_params()
