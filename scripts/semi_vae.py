@@ -129,7 +129,7 @@ class SentMeanEncoder(layers.MergeLayer):
 
 
     def get_output_shape_for(self, input_shapes):
-        return (input_shapes[0][0], input_shapes[0][2])
+        return (input_shapes[0][0], self.num_units)
 
 
     def get_params(self):
@@ -151,7 +151,7 @@ class SemiVAE(layers.MergeLayer):
                  ):
         '''
          params:
-             incomings: input layers, [image, label]
+             incomings: input layers, [sent_layer, mask_layer, label_layer]
              w_emb: numpy matrix, the word embeddings 
              num_units_hidden_common: num_units_hidden for all BasicLayers.
              dim_z: the dimension of z and num_units_output for encoders BaiscLayer
@@ -216,12 +216,17 @@ class SemiVAE(layers.MergeLayer):
         self.sampler = SamplerLayer([self.encoder_mu, self.encoder_log_var])
 
         self.concat_yz = layers.ConcatLayer([label_layer, self.sampler], axis=1)
+
+        self.decoder_w = layers.DenseLayer(self.concat_yz,
+            num_units = self.num_units_hidden_rnn,
+            nonlinearity = nonlinearities.identity
+            )
         
         # the sentence and mask used here is different from encoder, 
         # it is not safe to used 'embed_layer' and 'mask_layer'....
         self.decoder = layers.LSTMLayer(self.embed_layer,
             num_units = self.num_units_hidden_rnn,
-            hid_init = self.concat_yz,
+            hid_init = self.decoder_w,
             mask_input = mask_layer,
             grad_clipping = 0, 
             )
@@ -264,11 +269,13 @@ class SemiVAE(layers.MergeLayer):
         log_var_z = self.encoder_log_var.get_output_for(enc)
         z = self.sampler.get_output_for([mu_z, log_var_z])
         
-        decoder_input = self.concat_yz.get_output_for([label_input, z])
+        dec_init = self.concat_yz.get_output_for([label_input, z])
+        dec_init = self.decoder_w.get_output_for(dec_init)
         # shift sent_embs
         sent_embs_shifted = T.zeros_like(sent_embs)
         sent_embs_shifted = T.set_subtensor(sent_embs_shifted[1:], sent_embs[:-1])
-        dec = self.decoder.get_output_for([sent_embs_shifted, mask_input, decoder_input])
+        dec = self.decoder.get_output_for([sent_embs_shifted, mask_input, dec_init])
+        dec = self.decoder_shp.get_output_for(dec)
         pred_prob = self.decoder_x.get_output_for(dec)
         # we do not know the batch_size and seqlen until inputs are given
         pred_prob = pred_prob.reshape([sent_embs.shape[0] * sent_embs.shape[1], -1])
@@ -375,6 +382,7 @@ class SemiVAE(layers.MergeLayer):
         params += self.encoder.get_params()
         params += self.encoder_mu.get_params()
         params += self.encoder_log_var.get_params()
+        params += self.decoder_w.get_params()
         params += self.decoder.get_params()
         params += self.decoder_x.get_params()
         params += self.classifier_helper.get_params()

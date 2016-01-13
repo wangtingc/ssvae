@@ -35,7 +35,7 @@ def init_configurations():
     params['test_period'] = 1
     params['alpha'] = 0.1
     params['learning_rate'] = 0.0001
-    params['num_words'] = None
+    params['num_words'] = 10000
     params['dropout'] = 0.0 # to be tested
     params['exp_name'] = 'semi_lstm_nodropout'
     return params
@@ -85,6 +85,7 @@ def load_data(params):
             train = [train_x, binarize_labels(np.asarray(train_y), params['num_classes']).tolist()]
 
             unlabel = [unlabel + train_pos_2_unlabel + train_neg_2_unlabel]
+            test = [test[0], binarize_labels(np.asarray(test[1]), params['num_classses']).tolist()]
 
             print len(train[0]), len(train[1])
             print len(dev[0]), len(dev[1])
@@ -131,7 +132,7 @@ def load_data(params):
         train = [filter_words(train[0], params['num_words']), train[1]]
         dev = [filter_words(dev[0], params['num_words']), dev[1]]
         test = [filter_words(test[0], params['num_words']), test[1]]
-        unlabel = filter_words(unlabel)
+        unlabel = [filter_words(unlabel[0], params['num_words'])]
         w_emb = w_emb[: params['num_words'], :]
 
     return train, dev, test, unlabel, wdict, w_emb
