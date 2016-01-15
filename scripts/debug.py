@@ -23,7 +23,7 @@ def init_configurations():
     params['data_path'] = '../data/proc/imdb_u_sd.pkl.gz' # to be tested
     params['dict_path'] = '../data/proc/imdb_u_sd.dict.pkl.gz'
     params['emb_path'] = '../data/proc/imdb_emb_u_sd.pkl.gz'
-    params['num_batches_train'] = 1250
+    params['num_batches_train'] = 2500
     params['batch_size'] = 100 # for testing and dev
     params['num_classes'] = 2
     params['dim_z'] = 50
@@ -37,7 +37,7 @@ def init_configurations():
     params['learning_rate'] = 0.0001
     params['num_words'] = 10000
     params['dropout'] = 0.0 # to be tested
-    params['exp_name'] = 'semi_lstm_nodropout_labelonly'
+    params['exp_name'] = 'semi_lstm_nodropout_labelonly_debug'
     return params
 
 

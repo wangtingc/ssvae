@@ -11,6 +11,7 @@ import cPickle as pkl
 from batchiterator import BatchIterator
 from semi_vae import SemiVAE
 from misc import *
+from datetime import datetime
 import os
 
 import matplotlib
@@ -41,6 +42,9 @@ def init_configurations():
     params['weight_decay_rate'] = 2e-6
     params['annealing_center'] = 20
     params['annealing_width'] = 2
+    params['exp_time'] = datetime.now().strftime('%m%d%H%M')
+    params['save_weights_path'] = '../results/semi_vae_' + params['exp_time'] + '.pkl'
+    params['load_weights_path'] = None
     return params
 
 
@@ -187,6 +191,9 @@ def build_model(params, w_emb):
     acc = semi_vae.get_cost_test([x_l, m_l, y_l])
 
     network_params = semi_vae.get_params()
+    if params['load_weights_path']:
+        load_weights(network_params, params['load_weights_path'])
+            
 
     for param in network_params:
         print param.get_value().shape, param.name
@@ -197,14 +204,14 @@ def build_model(params, w_emb):
     f_train = theano.function([x_l, m_l, y_l, x_u, m_u, kl_w], cost, updates = params_update)
     f_test = theano.function([x_l, m_l, y_l], acc)
 
-    return f_train, f_test
+    return semi_vae, f_train, f_test
 
 
 def train(params):
     train, dev, test, unlabel, wdict, w_emb = load_data(params)
     #import numpy as np
     #w_emb = np.random.rand(200000, 100).astype('float32')
-    f_train, f_test = build_model(params, w_emb)
+    semi_vae, f_train, f_test = build_model(params, w_emb)
     
     assert params['num_samples_train'] % params['num_batches_train'] == 0
     assert params['num_samples_unlabel'] % params['num_batches_train'] == 0
@@ -296,6 +303,11 @@ def train(params):
         plt.plot(test_epoch_accs, 'g^', label='test')
         plt.legend()
         curve_fig.savefig(os.path.join('../results', params['exp_name'] + '.png'))
+
+        #save the weight
+        if params['save_weights_path']:
+            network_params = semi_vae.get_params()
+            save_weights(network_params, params['save_weights_path'])
 
 
 params = init_configurations()

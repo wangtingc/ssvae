@@ -361,10 +361,10 @@ class SemiVAE(layers.MergeLayer):
         sent_embs = self.embed_layer.get_output_for(sent_input)
         classifier_enc = self.classifier_helper.get_output_for([sent_embs, mask_input])
         prob_ys_given_x = self.classifier.get_output_for(classifier_enc)
-        cost_test = objectives.categorical_crossentropy(prob_ys_given_x, label_input)
+        #cost_test = objectives.categorical_crossentropy(prob_ys_given_x, label_input)
         cost_acc = T.eq(T.argmax(prob_ys_given_x, axis=1), T.argmax(label_input, axis=1))
 
-        return cost_test.mean(), cost_acc.mean()
+        return cost_acc.mean()
 
 
     def get_cost_prior(self):
