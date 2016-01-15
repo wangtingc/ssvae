@@ -19,12 +19,11 @@ import matplotlib.pyplot as plt
 
 def init_configurations():
     params = {}
-    params['exp_name'] = 'semi_lstm_nodropout'
     params['data'] = 'imdb'
-    params['data_path'] = '../data/proc/imdb_u.pkl.gz' # to be tested
-    params['dict_path'] = '../data/proc/imdb_u.dict.pkl.gz'
-    params['emb_path'] = '../data/proc/imdb_emb_u.pkl.gz'
-    params['num_batches_train'] = 2500
+    params['data_path'] = '../data/proc/imdb_u_sd.pkl.gz' # to be tested
+    params['dict_path'] = '../data/proc/imdb_u_sd.dict.pkl.gz'
+    params['emb_path'] = '../data/proc/imdb_emb_u_sd.pkl.gz'
+    params['num_batches_train'] = 1250
     params['batch_size'] = 100 # for testing and dev
     params['num_classes'] = 2
     params['dim_z'] = 50
@@ -32,15 +31,13 @@ def init_configurations():
     params['num_units_hidden_rnn'] = 128
     params['num_samples_label'] = 22500 # the first n samples in trainset.
     params['epoch'] = 200
-    params['valid_period'] = 10 # temporary exclude validset
-    params['test_period'] = 10
+    params['valid_period'] = 1 # temporary exclude validset
+    params['test_period'] = 1
     params['alpha'] = 0.1
     params['learning_rate'] = 0.0001
     params['num_words'] = 10000
     params['dropout'] = 0.0 # to be tested
-    params['weight_decay_rate'] = 2e-6
-    params['annealing_center'] = 20
-    params['annealing_width'] = 2
+    params['exp_name'] = 'semi_lstm_nodropout_labelonly'
     return params
 
 
@@ -148,8 +145,7 @@ def prepare_data(x):
         x_len.append(len(s))
         if max_len < len(s):
             max_len = len(s)
-    
-    # append <EOS> to data
+
     xx = np.zeros([len(x), max_len + 1], dtype='int32')
     m = np.zeros([len(x), max_len + 1], dtype=theano.config.floatX)
     for i, s in enumerate(x):
@@ -173,7 +169,7 @@ def build_model(params, w_emb):
                        params['dim_z'],
                        beta,
                        params['num_units_hidden_rnn'],
-                       params['weight_decay_rate'],
+                       2e-6,
                        )
 
     x_l = T.imatrix()
@@ -181,20 +177,21 @@ def build_model(params, w_emb):
     y_l = T.matrix()
     x_u = T.imatrix()
     m_u = T.matrix()
-    kl_w = T.scalar()
+    #cost = semi_vae.get_cost_together([x_l, m_l, y_l, x_u, m_u])
 
-    cost = semi_vae.get_cost_together([x_l, m_l, y_l, x_u, m_u], kl_w)
+    x_ems = semi_vae.embed_layer.get_output_for(x_l)
+    cost_label = semi_vae.get_cost_C([x_l, x_ems, m_l, y_l]).mean()
     acc = semi_vae.get_cost_test([x_l, m_l, y_l])
 
-    network_params = semi_vae.get_params()
+    network_params = semi_vae.classifier_helper.get_params() + semi_vae.embed_layer.get_params() + semi_vae.classifier.get_params()
 
     for param in network_params:
         print param.get_value().shape, param.name
 
-    params_update = updates.adam(cost, network_params, params['learning_rate'])
+    params_update = updates.rmsprop(cost_label, network_params, params['learning_rate'])
 
     #f_train =theano.function([x, m], pred)
-    f_train = theano.function([x_l, m_l, y_l, x_u, m_u, kl_w], cost, updates = params_update)
+    f_train = theano.function([x_l, m_l, y_l,], cost_label, updates = params_update, on_unused_input = 'warn')
     f_test = theano.function([x_l, m_l, y_l], acc)
 
     return f_train, f_test
@@ -235,6 +232,8 @@ def train(params):
 
     for epoch in xrange(params['epoch']):
         print('Epoch:', epoch)
+        #n_batches_train = 1
+        #n_batches_test = 1
 
         train_costs = []
         time_costs = []
@@ -249,16 +248,8 @@ def train(params):
             x_l, m_l = prepare_data(x_l)
             x_u = iter_unlabel.next()[0]
             x_u, m_u = prepare_data(x_u)
-            # calculate kl_w
-            anneal_value = epoch + np.float32(batch)/num_batches_train - params['annealing_center']
-            anneal_value = (anneal_value / params['annealing_width']).astype(theano.config.floatX)
-            kl_w = 1 if anneal_value > 7.0 else 1/(1 + np.exp(-anneal_value))
-            kl_w = kl_w.astype(theano.config.floatX)
-
-            train_cost = f_train(x_l, m_l, y_l, x_u, m_u, kl_w)
-            print train_cost
-            #train_acc = f_test(x_l, m_l, y_l)
-            train_acc = 0
+            train_cost = f_train(x_l, m_l, y_l)
+            train_acc = f_test(x_l, m_l, y_l)
             train_costs.append(train_cost)
             train_accs.append(train_acc)
             time_costs.append(time.time() - time_s)

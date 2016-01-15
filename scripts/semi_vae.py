@@ -147,7 +147,8 @@ class SemiVAE(layers.MergeLayer):
                  num_units_hidden_common,
                  dim_z,
                  beta,
-                 num_units_hidden_rnn
+                 num_units_hidden_rnn,
+                 decay_rate,
                  ):
         '''
          params:
@@ -172,6 +173,7 @@ class SemiVAE(layers.MergeLayer):
         self.dim_z = dim_z
         self.beta = beta
         self.num_units_hidden_rnn = num_units_hidden_rnn
+        self.decay_rate = decay_rate
         self.grad_clipping = 0 # to be tested
             
         # here we can try LSTMlayer and return the last output
@@ -255,7 +257,7 @@ class SemiVAE(layers.MergeLayer):
         return T.eye(self.num_classes)[label_input_cat].reshape([label_input_cat.shape[0], -1])
 
 
-    def get_cost_L(self, inputs):
+    def get_cost_L(self, inputs, kl_w):
         # use sent_embs not sent_idx
         # make it clear which get_output_for is used
         print('getting_cost_L')
@@ -284,11 +286,11 @@ class SemiVAE(layers.MergeLayer):
         l_x = (l_x.reshape([sent_embs.shape[0], -1]) * mask_input).sum(1)
         l_z = ((mu_z ** 2 + T.exp(log_var_z) - 1 - log_var_z) * 0.5).sum(1)
 
-        cost_L = l_x + l_z
+        cost_L = l_x + l_z * kl_w
         return cost_L
 
 
-    def get_cost_U(self, inputs):
+    def get_cost_U(self, inputs, kl_w):
         print('getting_cost_U')
         sent_input, sent_embs, mask_input = inputs
         classifier_enc = self.classifier_helper.get_output_for([sent_embs, mask_input])
@@ -312,7 +314,7 @@ class SemiVAE(layers.MergeLayer):
         for i in xrange(self.num_classes):
             label_input = T.zeros([sent_embs.shape[0], self.num_classes])
             label_input = T.set_subtensor(label_input[:, i], 1)
-            cost_L = self.get_cost_L([sent_input, sent_embs, mask_input, label_input])
+            cost_L = self.get_cost_L([sent_input, sent_embs, mask_input, label_input], kl_w)
             weighted_cost_L += prob_ys_given_x[:,i] * cost_L
 
         entropy_y_given_x = objectives.categorical_crossentropy(prob_ys_given_x, prob_ys_given_x)
@@ -331,26 +333,26 @@ class SemiVAE(layers.MergeLayer):
         return cost_C
 
 
-    def get_cost_for_label(self, inputs):
-        cost_L = self.get_cost_L(inputs)
+    def get_cost_for_label(self, inputs, kl_w):
+        cost_L = self.get_cost_L(inputs, kl_w)
         cost_C = self.get_cost_C(inputs)
         return cost_L.mean() + self.beta * cost_C.mean()
 
 
-    def get_cost_for_unlabel(self, inputs):
-        cost_U = self.get_cost_U(inputs)
+    def get_cost_for_unlabel(self, inputs, kl_w):
+        cost_U = self.get_cost_U(inputs, kl_w)
         return cost_U.mean()
 
 
-    def get_cost_together(self, inputs):
+    def get_cost_together(self, inputs, kl_w):
         sent_l, mask_l, label, sent_u, mask_u = inputs # l for label u for unlabel
         sent_embs_l = self.embed_layer.get_output_for(sent_l)
         sent_embs_u = self.embed_layer.get_output_for(sent_u)
 
-        cost_for_label = self.get_cost_for_label([sent_l, sent_embs_l, mask_l, label]) * sent_l.shape[0]
-        cost_for_unlabel = self.get_cost_for_unlabel([sent_u, sent_embs_u, mask_u]) * sent_u.shape[0]
+        cost_for_label = self.get_cost_for_label([sent_l, sent_embs_l, mask_l, label], kl_w) * sent_l.shape[0]
+        cost_for_unlabel = self.get_cost_for_unlabel([sent_u, sent_embs_u, mask_u], kl_w) * sent_u.shape[0]
         cost_together = (cost_for_label + cost_for_unlabel) / (sent_l.shape[0] + sent_u.shape[0])
-        cost_together += self.get_cost_prior() / 50000 # ...to be tested
+        cost_together += self.get_cost_prior() * self.decay_rate
         return cost_together
 
 

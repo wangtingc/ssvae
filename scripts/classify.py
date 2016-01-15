@@ -27,14 +27,14 @@ def init_configurations():
     params['dim_z'] = 128
     params['num_units_hidden_common'] = 500
     params['num_samples_label'] = 22500 # the first n samples in trainset.
-    params['epoch'] = 100
+    params['epoch'] = 200
     params['valid_period'] = 1 # temporary exclude validset
     params['test_period'] = 1
     params['alpha'] = 0.1
     params['learning_rate'] = 0.0001
     params['n_words'] = None
-    params['dropout'] = 0.5 # set 0 to no use
-    params['exp_name'] = 'clf_lstm_dropout'
+    params['dropout'] = 0.0 # set 0 to no use
+    params['exp_name'] = 'clf_lstm_nodropout'
     return params
 
 
@@ -263,13 +263,13 @@ def train(params):
         test_epoch_accs.append(np.mean(test_accs))
         print('test_accuracy.mean()', np.mean(test_accs))
 
-    #save the curve
-    curve_fig = plt.figure()
-    plt.plot(train_epoch_accs, 'r--', label='train')
-    plt.plot(dev_epoch_accs, 'bs', label='dev')
-    plt.plot(test_epoch_accs, 'g^', label='test')
-    plt.legend()
-    curve_fig.savefig(os.path.join('results', params['exp_name'] + '.png'))
+        #save the curve
+        curve_fig = plt.figure()
+        plt.plot(train_epoch_accs, 'r--', label='train')
+        plt.plot(dev_epoch_accs, 'bs', label='dev')
+        plt.plot(test_epoch_accs, 'g^', label='test')
+        plt.legend()
+        curve_fig.savefig(os.path.join('../results', params['exp_name'] + '.png'))
 
 
 params = init_configurations()
