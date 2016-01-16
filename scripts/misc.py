@@ -1,6 +1,8 @@
 import numpy as np
 import theano
 import cPickle as pkl
+import matplotlib.pyplot as plt
+import matplotlib.mlab as mlab
 
 def binarize_labels(labels, num_classes):
     labels_oh = np.zeros([labels.shape[0], num_classes], dtype=theano.config.floatX)
@@ -35,3 +37,15 @@ def load_weights(network_params, load_weights_path):
     values = pkl.load(open(load_weights_path, 'rb'))
     for p, v in zip(network_params, values):
         p.set_values(v)
+
+def analyze(data, save_path):
+    lens = []
+    for sample in data:
+        lens.append(len(sample))
+
+    n, bins, patchs = plt.hist(lens, 100, facecolor='green',)
+    l = plt.plot(bins)
+    plt.title(r'$\mathrm{Histogram\ of\ dataset:}\ \mu: %.1f,\ \sigma, %.1f$'%(np.mean(lens), np.std(lens)))
+    plt.savefig(save_path)
+
+
