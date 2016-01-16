@@ -16,6 +16,7 @@ import cPickle as pkl
 import gzip
 
 from collections import OrderedDict
+import nltk.data
 
 import glob
 import os
@@ -90,21 +91,50 @@ def build_dict(path, include_unlabel):
 
 
 def grab_data(path, dictionary):
-    sentences = []
+    sent_tokenize = nltk.data.load('tokenizers/punkt/english.pickle')
+    sents = []
     currdir = os.getcwd()
     os.chdir(path)
+
+    cnt_sent = 0
+    sent_divide = [0]
     for ff in glob.glob("*.txt"):
         with open(ff, 'r') as f:
-            sentences.append(filt_line(f.readline()))
+            line = filt_line(f.readline().decode('utf8'))
+            sentences = sent_tokenize.tokenize(line)
+            sentences = [s.encode('utf8') for s in sentences]
+            cnt_sent += len(sentences)
+            sent_divide.append(cnt_sent)
+            sents.extend(sentences)
+
     os.chdir(currdir)
-    sentences = tokenize(sentences)
+    sents = tokenize(sents)
 
-    seqs = [None] * len(sentences)
-    for idx, ss in enumerate(sentences):
-        words = ss.strip().lower().split()
-        seqs[idx] = [dictionary[w] if w in dictionary else 1 for w in words]
+    reviews = [None] * (len(sent_divide) - 1)
+    for idx in xrange(len(sent_divide) - 1):
+        seqs = []
+        start = sent_divide[idx]
+        end = sent_divide[idx+1]
+        for sentence in sents[start: end]:
+            words = sentence.strip().lower().split()
+            seqs.append([dictionary[w] if w in dictionary else 1 for w in words])
+        if idx % 1000 == 0:
+            print idx
+        reviews[idx] = seqs
 
-    return seqs
+    def len_argsort(seq):
+        def v(x):
+            r = seq[x]
+            n = 0
+            for i in r:
+                n += len(i)
+            return n
+        return sorted(range(len(seq)), key=lambda x: v(x))
+
+    sorted_idx = len_argsort(reviews)
+    reviews = [reviews[i] for i in sorted_idx]
+
+    return reviews
 
 
 def main():

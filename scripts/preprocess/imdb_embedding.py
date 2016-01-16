@@ -42,6 +42,7 @@ def build_emb(word_dict, word_emb):
 
 if __name__ == '__main__':
     imdb_filename = '../../data/proc/imdb_l.dict.pkl.gz'
+    W_emb_filename = '../../data/proc/imdb_emb_l.pkl.gz'
     glove_filename = '../../data/raw/glove/glove.6B.100d.txt.gz'
 
     #imdb = load_pre_imdb(imdb_filename)
@@ -71,7 +72,6 @@ if __name__ == '__main__':
     print('The percentage of imdb vocabulary covered by glove is', len(words_imdb & words_glove) * 1.0 / len(words_imdb))
 
     W_emb = build_emb(imdb_dict, glove)
-    W_emb_filename = '../../data/proc/imdb_emb.pkl.gz'
 
     with gzip.open(W_emb_filename, 'wb') as f:
         pkl.dump(W_emb, f)
