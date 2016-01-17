@@ -20,8 +20,11 @@ def filter_words(x, n_words):
     '''
 
     new_x = []
-    for s in x:
-        new_x.append([idx if idx < n_words else 1 for idx in s])
+    for i in x:
+        new_xi = []
+        for j in i:
+            new_xi.append([idx if idx < n_words else 1 for idx in j])
+        new_x.append(new_xi)
 
     return new_x
 
@@ -38,6 +41,7 @@ def load_weights(network_params, load_weights_path):
     for p, v in zip(network_params, values):
         p.set_values(v)
 
+
 def analyze(data, save_path):
     lens = []
     for sample in data:
@@ -48,4 +52,39 @@ def analyze(data, save_path):
     plt.title(r'$\mathrm{Histogram\ of\ dataset:}\ \mu: %.1f,\ \sigma, %.1f$'%(np.mean(lens), np.std(lens)))
     plt.savefig(save_path)
 
+
+def prepare_data(x, n_seq = None):
+    # flatten sentences or select n sentences
+    new_x = []
+    for i in x:
+        if n_seq and len(i) > n_seq:
+            len_seq = len(i)
+            r = np.random.randint(0, len_seq - n_seq + 1)
+            s = []
+            for j in i[r: r + n_seq]:
+                s += j
+            new_x.append(s)
+        else:
+            s = []
+            for j in i:
+                s += j
+            new_x.append(s)
+
+    x = new_x
+
+    x_len = []
+    max_len = 0
+    for s in x:
+        x_len.append(len(s))
+        if max_len < len(s):
+            max_len = len(s)
+    
+    # append <EOS> to data
+    xx = np.zeros([len(x), max_len + 1], dtype='int32')
+    m = np.zeros([len(x), max_len + 1], dtype=theano.config.floatX)
+    for i, s in enumerate(x):
+        xx[i, :x_len[i]] = x[i]
+        m[i, :x_len[i] + 1] = 1
+
+    return xx, m
 

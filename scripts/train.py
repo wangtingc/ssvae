@@ -1,3 +1,6 @@
+import matplotlib
+matplotlib.use('Agg') # not to use X-desktop
+import matplotlib.pyplot as plt
 import time
 import theano
 import theano.tensor as T
@@ -14,9 +17,6 @@ from misc import *
 from datetime import datetime
 import os
 
-import matplotlib
-matplotlib.use('Agg') # not to use X-desktop
-import matplotlib.pyplot as plt
 
 def init_configurations():
     params = {}
@@ -45,6 +45,7 @@ def init_configurations():
     params['exp_time'] = datetime.now().strftime('%m%d%H%M')
     params['save_weights_path'] = '../results/semi_vae_' + params['exp_time'] + '.pkl'
     params['load_weights_path'] = None
+    params['num_seqs'] = 100
     return params
 
 
@@ -145,24 +146,6 @@ def load_data(params):
     return train, dev, test, unlabel, wdict, w_emb
 
 
-def prepare_data(x):
-    x_len = []
-    max_len = 0
-    for s in x:
-        x_len.append(len(s))
-        if max_len < len(s):
-            max_len = len(s)
-    
-    # append <EOS> to data
-    xx = np.zeros([len(x), max_len + 1], dtype='int32')
-    m = np.zeros([len(x), max_len + 1], dtype=theano.config.floatX)
-    for i, s in enumerate(x):
-        xx[i, :x_len[i]] = x[i]
-        m[i, :x_len[i] + 1] = 1
-
-    return xx, m
-
-
 def build_model(params, w_emb):
     l_x = layers.InputLayer((None, None))
     l_m = layers.InputLayer((None, None))
@@ -213,8 +196,8 @@ def train(params):
     #w_emb = np.random.rand(200000, 100).astype('float32')
     semi_vae, f_train, f_test = build_model(params, w_emb)
     
-    assert params['num_samples_train'] % params['num_batches_train'] == 0
-    assert params['num_samples_unlabel'] % params['num_batches_train'] == 0
+    #assert params['num_samples_train'] % params['num_batches_train'] == 0
+    #assert params['num_samples_unlabel'] % params['num_batches_train'] == 0
     assert params['num_samples_dev'] % params['batch_size'] == 0
     assert params['num_samples_test'] % params['batch_size'] == 0
     
@@ -229,11 +212,12 @@ def train(params):
     batch_size_u = params['num_samples_unlabel'] / num_batches_train
 
     print num_batches_train, num_batches_dev, num_batches_test
-
-    iter_train = BatchIterator(params['num_samples_train'], batch_size_l, data = train)
-    iter_unlabel = BatchIterator(params['num_samples_unlabel'], batch_size_u, data = unlabel)
-    iter_dev = BatchIterator(params['num_samples_dev'], params['batch_size'], data = dev)
-    iter_test = BatchIterator(params['num_samples_test'], params['batch_size'], data = test)
+    
+    testing = True if params['num_seqs'] is None else False
+    iter_train = BatchIterator(params['num_samples_train'], batch_size_l, data = train, testing = testing)
+    iter_unlabel = BatchIterator(params['num_samples_unlabel'], batch_size_u, data = unlabel, testing = testing)
+    iter_dev = BatchIterator(params['num_samples_dev'], params['batch_size'], data = dev, testing = testing)
+    iter_test = BatchIterator(params['num_samples_test'], params['batch_size'], data = test, testing = testing)
     
     train_epoch_costs = []
     train_epoch_accs = []
@@ -253,17 +237,18 @@ def train(params):
         for batch in xrange(num_batches_train):
             time_s = time.time()
             x_l, y_l = iter_train.next()
-            x_l, m_l = prepare_data(x_l)
+            x_l, m_l = prepare_data(x_l, params['num_seqs'])
             x_u = iter_unlabel.next()[0]
-            x_u, m_u = prepare_data(x_u)
+            x_u, m_u = prepare_data(x_u, params['num_seqs'])
             # calculate kl_w
             anneal_value = epoch + np.float32(batch)/num_batches_train - params['annealing_center']
             anneal_value = (anneal_value / params['annealing_width']).astype(theano.config.floatX)
             kl_w = 1 if anneal_value > 7.0 else 1/(1 + np.exp(-anneal_value))
             kl_w = kl_w.astype(theano.config.floatX)
-
+            
+            print x_l.shape, x_u.shape
             train_cost = f_train(x_l, m_l, y_l, x_u, m_u, kl_w)
-            print train_cost
+            print time.time() - time_s, x_l.shape[1]
             #train_acc = f_test(x_l, m_l, y_l)
             train_acc = 0
             train_costs.append(train_cost)
@@ -279,7 +264,7 @@ def train(params):
         dev_accs = []
         for batch in xrange(num_batches_dev):
             x, y = iter_dev.next()
-            x, m = prepare_data(x)
+            x, m = prepare_data(x, params['num_seqs'])
             dev_acc = f_test(x, m, y)
             dev_accs.append(dev_acc)
     
@@ -289,7 +274,7 @@ def train(params):
         test_accs = []
         for batch in xrange(num_batches_test):
             x, y = iter_test.next()
-            x, m = prepare_data(x)
+            x, m = prepare_data(x, params['num_seqs'])
             test_acc = f_test(x, m, y)
             test_accs.append(test_acc)
 
@@ -312,4 +297,3 @@ def train(params):
 
 params = init_configurations()
 train(params)
-

@@ -1,3 +1,6 @@
+import matplotlib
+matplotlib.use('Agg') # not to use X-desktop
+import matplotlib.pyplot as plt
 import time
 import theano
 import theano.tensor as T
@@ -12,9 +15,6 @@ from batchiterator import BatchIterator
 from misc import *
 import os
 
-import matplotlib
-matplotlib.use('Agg') # not to use X-desktop
-import matplotlib.pyplot as plt
 
 def init_configurations():
     params = {}
@@ -22,7 +22,7 @@ def init_configurations():
     params['data_path'] = '../data/proc/imdb_l.pkl.gz' # to be tested
     params['dict_path'] = '../data/proc/imdb_l.dict.pkl.gz'
     params['emb_path'] = '../data/proc/imdb_emb_l.pkl.gz'
-    params['batch_size'] = 32
+    params['batch_size'] = 50
     params['n_classes'] = 2
     params['dim_z'] = 128
     params['num_units_hidden_common'] = 500
@@ -32,9 +32,9 @@ def init_configurations():
     params['test_period'] = 1
     params['alpha'] = 0.1
     params['learning_rate'] = 0.0001
-    params['n_words'] = None
+    params['n_words'] = 30000
     params['dropout'] = 0.0 # set 0 to no use
-    params['exp_name'] = 'clf_lstm_nodropout'
+    params['exp_name'] = 'clf_lstm_nodropout_3w'
     return params
 
 
@@ -127,23 +127,6 @@ def load_data(params):
     return train, dev, test, wdict, w_emb
 
 
-def prepare_data(x):
-    x_len = []
-    max_len = 0
-    for s in x:
-        x_len.append(len(s))
-        if max_len < len(s):
-            max_len = len(s)
-
-    xx = np.zeros([len(x), max_len + 1], dtype='int32')
-    m = np.zeros([len(x), max_len + 1], dtype=theano.config.floatX)
-    for i, s in enumerate(x):
-        xx[i, :x_len[i]] = x[i]
-        m[i, :x_len[i] + 1] = 1
-
-    return xx, m
-
-
 class MeanLayer(layers.MergeLayer):
     def __init__(self, incomings):
         super(MeanLayer, self).__init__(incomings)
@@ -208,9 +191,9 @@ def train(params):
     train, dev, test, wdict, w_emb = load_data(params)
     f_train, f_test = build_model(params, w_emb)
 
-    iter_train = BatchIterator(range(params['n_samples_train']), params['batch_size'], data = train)
-    iter_dev = BatchIterator(range(params['n_samples_dev']), params['batch_size'], data = dev)
-    iter_test = BatchIterator(range(params['n_samples_test']), params['batch_size'], data = test)
+    iter_train = BatchIterator(range(params['n_samples_train']), params['batch_size'], data = train, testing = False)
+    iter_dev = BatchIterator(range(params['n_samples_dev']), params['batch_size'], data = dev, testing = False)
+    iter_test = BatchIterator(range(params['n_samples_test']), params['batch_size'], data = test, testing = False)
     
     train_epoch_costs = []
     train_epoch_accs = []
@@ -222,6 +205,7 @@ def train(params):
         n_batches_dev = params['n_samples_dev'] / params['batch_size']
         n_batches_test = params['n_samples_test'] / params['batch_size']
         #n_batches_train = 1
+        #n_batches_dev = 1
         #n_batches_test = 1
 
         train_costs = []
