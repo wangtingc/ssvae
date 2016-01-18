@@ -278,7 +278,7 @@ class SemiVAE(layers.MergeLayer):
         dec_init = self.decoder_w.get_output_for(dec_init)
         # shift embs
         embs_shifted = T.zeros_like(embs)
-        embs_shifted = T.set_subtensor(embs_shifted[1:], embs[:-1])
+        embs_shifted = T.set_subtensor(embs_shifted[:, 1:, :], embs[:, :-1, :])
         #embs_shifted = T.set_subtensor(embs_shifted[0], T.dot(y, self.init_w))
         dec = self.decoder.get_output_for([embs_shifted, m, dec_init])
         dec = self.decoder_shp.get_output_for(dec)
