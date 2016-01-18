@@ -20,18 +20,18 @@ import os
 
 def init_configurations():
     params = {}
-    params['exp_name'] = 'semi_lstm_nodropout'
+    params['exp_name'] = 'semi_lstm_nodropout_1w'
     params['data'] = 'imdb'
     params['data_path'] = '../data/proc/imdb_u.pkl.gz' # to be tested
     params['dict_path'] = '../data/proc/imdb_u.dict.pkl.gz'
     params['emb_path'] = '../data/proc/imdb_emb_u.pkl.gz'
-    params['num_batches_train'] = 2500
+    params['num_batches_train'] = 1250
     params['batch_size'] = 100 # for testing and dev
     params['num_classes'] = 2
-    params['dim_z'] = 50
+    params['dim_z'] = 15
     params['num_units_hidden_common'] = 100
     params['num_units_hidden_rnn'] = 128
-    params['num_samples_label'] = 22500 # the first n samples in trainset.
+    params['num_samples_label'] = 20000 # the first n samples in trainset.
     params['epoch'] = 200
     params['valid_period'] = 10 # temporary exclude validset
     params['test_period'] = 10
@@ -45,7 +45,8 @@ def init_configurations():
     params['exp_time'] = datetime.now().strftime('%m%d%H%M')
     params['save_weights_path'] = '../results/semi_vae_' + params['exp_time'] + '.pkl'
     params['load_weights_path'] = None
-    params['num_seqs'] = 100
+    params['num_seqs'] = None
+    params['len_seqs'] = 100
     return params
 
 
@@ -63,7 +64,7 @@ def load_data(params):
             unlabel = pkl.load(f)
 
             # split devset from train set
-            valid_portion = 0.10 # only for imdb dataset (no devset)
+            valid_portion = 0.20 # only for imdb dataset (no devset)
             train_pos_idx = np.where(np.asarray(train[1]) ==  1)[0] # np.where return tuple 
             train_neg_idx = np.where(np.asarray(train[1]) ==  0)[0]
             train_pos = [train[0][i] for i in train_pos_idx]
@@ -163,15 +164,22 @@ def build_model(params, w_emb):
                        params['weight_decay_rate'],
                        )
 
-    x_l = T.imatrix()
-    m_l = T.matrix()
+    x_l_all = T.imatrix()
+    m_l_all = T.matrix()
+    x_l_sub = T.imatrix()
+    m_l_sub = T.matrix()
     y_l = T.matrix()
-    x_u = T.imatrix()
-    m_u = T.matrix()
+    x_u_all = T.imatrix()
+    m_u_all = T.matrix()
+    x_u_sub = T.imatrix()
+    m_u_sub = T.matrix()
     kl_w = T.scalar()
 
-    cost = semi_vae.get_cost_together([x_l, m_l, y_l, x_u, m_u], kl_w)
-    acc = semi_vae.get_cost_test([x_l, m_l, y_l])
+    inputs_l = [x_l_all, m_l_all, x_l_sub, m_l_sub, y_l]
+    inputs_u = [x_u_all, m_u_all, x_u_sub, m_u_sub]
+
+    cost = semi_vae.get_cost_together(inputs_l, inputs_u, kl_w)
+    acc = semi_vae.get_cost_test([x_l_all, m_l_all, y_l])
 
     network_params = semi_vae.get_params()
     if params['load_weights_path']:
@@ -184,8 +192,9 @@ def build_model(params, w_emb):
     params_update = updates.adam(cost, network_params, params['learning_rate'])
 
     #f_train =theano.function([x, m], pred)
-    f_train = theano.function([x_l, m_l, y_l, x_u, m_u, kl_w], cost, updates = params_update)
-    f_test = theano.function([x_l, m_l, y_l], acc)
+    print inputs_l + inputs_u
+    f_train = theano.function(inputs_l + inputs_u + [kl_w], cost, updates = params_update)
+    f_test = theano.function([x_l_all, m_l_all, y_l], acc)
 
     return semi_vae, f_train, f_test
 
@@ -213,7 +222,7 @@ def train(params):
 
     print num_batches_train, num_batches_dev, num_batches_test
     
-    testing = True if params['num_seqs'] is None else False
+    testing = False if params['num_seqs'] or params['len_seqs'] else True
     iter_train = BatchIterator(params['num_samples_train'], batch_size_l, data = train, testing = testing)
     iter_unlabel = BatchIterator(params['num_samples_unlabel'], batch_size_u, data = unlabel, testing = testing)
     iter_dev = BatchIterator(params['num_samples_dev'], params['batch_size'], data = dev, testing = testing)
@@ -237,19 +246,26 @@ def train(params):
         for batch in xrange(num_batches_train):
             time_s = time.time()
             x_l, y_l = iter_train.next()
-            x_l, m_l = prepare_data(x_l, params['num_seqs'])
+            x_l_all, m_l_all = prepare_data(x_l)
+            x_l_sub, m_l_sub = prepare_data(x_l, params['num_seqs'], params['len_seqs'])
+            inputs_l = [x_l_all, m_l_all, x_l_sub, m_l_sub, y_l]
+
             x_u = iter_unlabel.next()[0]
-            x_u, m_u = prepare_data(x_u, params['num_seqs'])
+            x_u_all, m_u_all = prepare_data(x_u)
+            x_u_sub, m_u_sub = prepare_data(x_u, params['num_seqs'], params['len_seqs'])
+            inputs_u = [x_u_all, m_u_all, x_u_sub, m_u_sub]
+
             # calculate kl_w
             anneal_value = epoch + np.float32(batch)/num_batches_train - params['annealing_center']
             anneal_value = (anneal_value / params['annealing_width']).astype(theano.config.floatX)
             kl_w = 1 if anneal_value > 7.0 else 1/(1 + np.exp(-anneal_value))
             kl_w = kl_w.astype(theano.config.floatX)
-            
-            print x_l.shape, x_u.shape
-            train_cost = f_train(x_l, m_l, y_l, x_u, m_u, kl_w)
-            print time.time() - time_s, x_l.shape[1]
-            #train_acc = f_test(x_l, m_l, y_l)
+                
+            #print x_l_all.shape, x_u_all.shape
+            #print x_l_sub.shape, x_u_sub.shape
+            train_cost = f_train(*(inputs_l + inputs_u + [kl_w]))
+            #train_acc = f_test(x_l_all, m_l_all, y_l)
+            #print time.time() - time_s
             train_acc = 0
             train_costs.append(train_cost)
             train_accs.append(train_acc)
@@ -264,7 +280,7 @@ def train(params):
         dev_accs = []
         for batch in xrange(num_batches_dev):
             x, y = iter_dev.next()
-            x, m = prepare_data(x, params['num_seqs'])
+            x, m = prepare_data(x)
             dev_acc = f_test(x, m, y)
             dev_accs.append(dev_acc)
     
@@ -274,7 +290,7 @@ def train(params):
         test_accs = []
         for batch in xrange(num_batches_test):
             x, y = iter_test.next()
-            x, m = prepare_data(x, params['num_seqs'])
+            x, m = prepare_data(x)
             test_acc = f_test(x, m, y)
             test_accs.append(test_acc)
 

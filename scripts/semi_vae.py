@@ -4,6 +4,7 @@ The implementation for paper tilted with 'semi-supervised
 learning with deep generative methods'.
 '''
 import numpy as np
+import theano
 from theano import tensor as T
 from lasagne import layers
 from lasagne import nonlinearities
@@ -218,6 +219,7 @@ class SemiVAE(layers.MergeLayer):
         self.sampler = SamplerLayer([self.encoder_mu, self.encoder_log_var])
 
         self.concat_yz = layers.ConcatLayer([label_layer, self.sampler], axis=1)
+        #self.init_w = theano.shared(np.random.rand(2, self.dim_emb))
 
         self.decoder_w = layers.DenseLayer(self.concat_yz,
             num_units = self.num_units_hidden_rnn,
@@ -241,6 +243,7 @@ class SemiVAE(layers.MergeLayer):
             nonlinearity = nonlinearities.softmax
             )
 
+
         self.classifier_helper = SentMeanEncoder(
             [self.embed_layer, mask_layer],
             num_units = self.num_units_hidden_rnn,
@@ -263,27 +266,28 @@ class SemiVAE(layers.MergeLayer):
         print('getting_cost_L')
 
         # inputs must obey the order.
-        sent_input, sent_embs, mask_input, label_input = inputs
-        #sent_embs = self.embed_layer.get_output_for(sent_input)
-        sent_enc = self.sent_encoder.get_output_for([sent_embs, mask_input])
-        enc = self.encoder.get_output_for(self.concat_xy.get_output_for([sent_enc, label_input]))
+        x, embs, m, y = inputs
+        #embs = self.embed_layer.get_output_for(x)
+        sent_enc = self.sent_encoder.get_output_for([embs, m])
+        enc = self.encoder.get_output_for(self.concat_xy.get_output_for([sent_enc, y]))
         mu_z = self.encoder_mu.get_output_for(enc)
         log_var_z = self.encoder_log_var.get_output_for(enc)
         z = self.sampler.get_output_for([mu_z, log_var_z])
         
-        dec_init = self.concat_yz.get_output_for([label_input, z])
+        dec_init = self.concat_yz.get_output_for([y, z])
         dec_init = self.decoder_w.get_output_for(dec_init)
-        # shift sent_embs
-        sent_embs_shifted = T.zeros_like(sent_embs)
-        sent_embs_shifted = T.set_subtensor(sent_embs_shifted[1:], sent_embs[:-1])
-        dec = self.decoder.get_output_for([sent_embs_shifted, mask_input, dec_init])
+        # shift embs
+        embs_shifted = T.zeros_like(embs)
+        embs_shifted = T.set_subtensor(embs_shifted[1:], embs[:-1])
+        #embs_shifted = T.set_subtensor(embs_shifted[0], T.dot(y, self.init_w))
+        dec = self.decoder.get_output_for([embs_shifted, m, dec_init])
         dec = self.decoder_shp.get_output_for(dec)
         pred_prob = self.decoder_x.get_output_for(dec)
         # we do not know the batch_size and seqlen until inputs are given
-        pred_prob = pred_prob.reshape([sent_embs.shape[0] * sent_embs.shape[1], -1])
+        pred_prob = pred_prob.reshape([embs.shape[0] * embs.shape[1], -1])
         
-        l_x = objectives.categorical_crossentropy(pred_prob, sent_input.flatten())
-        l_x = (l_x.reshape([sent_embs.shape[0], -1]) * mask_input).sum(1)
+        l_x = objectives.categorical_crossentropy(pred_prob, x.flatten())
+        l_x = (l_x.reshape([embs.shape[0], -1]) * m).sum(1)
         l_z = ((mu_z ** 2 + T.exp(log_var_z) - 1 - log_var_z) * 0.5).sum(1)
 
         cost_L = l_x + l_z * kl_w
@@ -292,29 +296,29 @@ class SemiVAE(layers.MergeLayer):
 
     def get_cost_U(self, inputs, kl_w):
         print('getting_cost_U')
-        sent_input, sent_embs, mask_input = inputs
-        classifier_enc = self.classifier_helper.get_output_for([sent_embs, mask_input])
+        x_all, embs_all, m_all, x_sub, embs_sub, m_sub = inputs
+        classifier_enc = self.classifier_helper.get_output_for([embs_all, m_all])
         prob_ys_given_x = self.classifier.get_output_for(classifier_enc)
 
         '''
-        label_input_with = []
+        y_with = []
 	for i in xrange(self.num_classes):
-                label_input_with.append(self.convert_onehot(T.zeros([image_input.shape[0]], dtype='int64') + i))
+                y_with.append(self.convert_onehot(T.zeros([image_input.shape[0]], dtype='int64') + i))
 
         cost_L_with = []
 	for i in xrange(self.num_classes):
-                cost_L_with.append(self.get_cost_L([image_input, label_input_with[i]]))
+                cost_L_with.append(self.get_cost_L([image_input, y_with[i]]))
 
         weighted_cost_L = T.zeros([image_input.shape[0],])
         for i in xrange(self.num_classes):
                 weighted_cost_L += prob_ys_given_x[:, i] * cost_L_with[i]
         '''
 
-        weighted_cost_L = T.zeros([sent_embs.shape[0],])
+        weighted_cost_L = T.zeros([embs_all.shape[0],])
         for i in xrange(self.num_classes):
-            label_input = T.zeros([sent_embs.shape[0], self.num_classes])
-            label_input = T.set_subtensor(label_input[:, i], 1)
-            cost_L = self.get_cost_L([sent_input, sent_embs, mask_input, label_input], kl_w)
+            y = T.zeros([embs_all.shape[0], self.num_classes])
+            y = T.set_subtensor(y[:, i], 1)
+            cost_L = self.get_cost_L([x_sub, embs_sub, m_sub, y], kl_w)
             weighted_cost_L += prob_ys_given_x[:,i] * cost_L
 
         entropy_y_given_x = objectives.categorical_crossentropy(prob_ys_given_x, prob_ys_given_x)
@@ -325,17 +329,18 @@ class SemiVAE(layers.MergeLayer):
 
     def get_cost_C(self, inputs):
         print('getting_cost_C')
-        sent_input, sent_embs, mask_input, label_input = inputs
-        classifier_enc = self.classifier_helper.get_output_for([sent_embs, mask_input])
+        x, embs, m, y = inputs
+        classifier_enc = self.classifier_helper.get_output_for([embs, m])
         prob_ys_given_x = self.classifier.get_output_for(classifier_enc)
-        prob_y_given_x = (prob_ys_given_x * label_input).sum(1)
+        prob_y_given_x = (prob_ys_given_x * y).sum(1)
         cost_C = -T.log(prob_y_given_x)
         return cost_C
 
 
     def get_cost_for_label(self, inputs, kl_w):
-        cost_L = self.get_cost_L(inputs, kl_w)
-        cost_C = self.get_cost_C(inputs)
+        x_all, embs_all, m_all, x_sub, embs_sub, m_sub, y = inputs
+        cost_L = self.get_cost_L([x_sub, embs_sub, m_sub, y], kl_w)
+        cost_C = self.get_cost_C([x_all, embs_all, m_all, y])
         return cost_L.mean() + self.beta * cost_C.mean()
 
 
@@ -344,25 +349,33 @@ class SemiVAE(layers.MergeLayer):
         return cost_U.mean()
 
 
-    def get_cost_together(self, inputs, kl_w):
-        sent_l, mask_l, label, sent_u, mask_u = inputs # l for label u for unlabel
-        sent_embs_l = self.embed_layer.get_output_for(sent_l)
-        sent_embs_u = self.embed_layer.get_output_for(sent_u)
+    def get_cost_together(self, inputs_l, inputs_u, kl_w):
+        x_l_all, m_l_all, x_l_sub, m_l_sub, y_l = inputs_l # l for label u for unlabel
+        x_u_all, m_u_all, x_u_sub, m_u_sub = inputs_u
 
-        cost_for_label = self.get_cost_for_label([sent_l, sent_embs_l, mask_l, label], kl_w) * sent_l.shape[0]
-        cost_for_unlabel = self.get_cost_for_unlabel([sent_u, sent_embs_u, mask_u], kl_w) * sent_u.shape[0]
-        cost_together = (cost_for_label + cost_for_unlabel) / (sent_l.shape[0] + sent_u.shape[0])
+        # get embs
+        embs_l_all = self.embed_layer.get_output_for(x_l_all)
+        embs_l_sub = self.embed_layer.get_output_for(x_l_sub)
+        embs_u_all = self.embed_layer.get_output_for(x_u_all)
+        embs_u_sub = self.embed_layer.get_output_for(x_u_sub)
+        
+        inputs_l_with_emb = [x_l_all, embs_l_all, m_l_all, x_l_sub, embs_l_sub, m_l_sub, y_l]
+        inputs_u_with_emb = [x_u_all, embs_u_all, m_u_all, x_u_sub, embs_u_sub, m_u_sub]
+
+        cost_for_label = self.get_cost_for_label(inputs_l_with_emb, kl_w) * x_l_all.shape[0]
+        cost_for_unlabel = self.get_cost_for_unlabel(inputs_u_with_emb, kl_w) * x_u_all.shape[0]
+        cost_together = (cost_for_label + cost_for_unlabel)/(x_l_all.shape[0] + x_u_all.shape[0])
         cost_together += self.get_cost_prior() * self.decay_rate
         return cost_together
 
 
     def get_cost_test(self, inputs):
-        sent_input, mask_input, label_input = inputs
-        sent_embs = self.embed_layer.get_output_for(sent_input)
-        classifier_enc = self.classifier_helper.get_output_for([sent_embs, mask_input])
+        x, m, y = inputs
+        embs = self.embed_layer.get_output_for(x)
+        classifier_enc = self.classifier_helper.get_output_for([embs, m])
         prob_ys_given_x = self.classifier.get_output_for(classifier_enc)
-        #cost_test = objectives.categorical_crossentropy(prob_ys_given_x, label_input)
-        cost_acc = T.eq(T.argmax(prob_ys_given_x, axis=1), T.argmax(label_input, axis=1))
+        #cost_test = objectives.categorical_crossentropy(prob_ys_given_x, y)
+        cost_acc = T.eq(T.argmax(prob_ys_given_x, axis=1), T.argmax(y, axis=1))
 
         return cost_acc.mean()
 

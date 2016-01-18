@@ -53,7 +53,13 @@ def analyze(data, save_path):
     plt.savefig(save_path)
 
 
-def prepare_data(x, n_seq = None):
+def prepare_data(x, n_seq = None, l_seq = None):
+    '''
+    this function calculate x and mask. if n_seq is given, then extract 
+    n_seqs sentences. if l_seq is given, then extract sentences shorter
+    than l_seq 
+    '''
+    assert not(n_seq and l_seq)
     # flatten sentences or select n sentences
     new_x = []
     for i in x:
@@ -63,6 +69,14 @@ def prepare_data(x, n_seq = None):
             s = []
             for j in i[r: r + n_seq]:
                 s += j
+            new_x.append(s)
+        elif l_seq:
+            len_seq = len(i)
+            r = np.random.randint(0, len_seq)
+            s = i[r]
+            while r+1 < len(i) and len(s) + len(i[r+1]) < l_seq:
+                s = s + i[r+1]
+                r += 1
             new_x.append(s)
         else:
             s = []
