@@ -258,7 +258,7 @@ def train(params):
             # calculate kl_w
             anneal_value = epoch + np.float32(batch)/num_batches_train - params['annealing_center']
             anneal_value = (anneal_value / params['annealing_width']).astype(theano.config.floatX)
-            kl_w = 1 if anneal_value > 7.0 else 1/(1 + np.exp(-anneal_value))
+            kl_w = np.float32(1) if anneal_value > 7.0 else 1/(1 + np.exp(-anneal_value))
             kl_w = kl_w.astype(theano.config.floatX)
                 
             #print x_l_all.shape, x_u_all.shape
