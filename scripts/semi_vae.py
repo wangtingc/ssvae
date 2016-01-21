@@ -223,7 +223,8 @@ class SemiVAE(layers.MergeLayer):
 
         self.decoder_w = layers.DenseLayer(self.concat_yz,
             num_units = self.num_units_hidden_rnn,
-            nonlinearity = nonlinearities.identity
+            nonlinearity = nonlinearities.identity,
+            b = init.Constant(0.0),
             )
         
         # the sentence and mask used here is different from encoder, 
@@ -260,7 +261,7 @@ class SemiVAE(layers.MergeLayer):
         return T.eye(self.num_classes)[label_input_cat].reshape([label_input_cat.shape[0], -1])
 
 
-    def get_cost_L(self, inputs, kl_w):
+    def get_cost_L(self, inputs, kl_w, word_dropout):
         # use sent_embs not sent_idx
         # make it clear which get_output_for is used
         print('getting_cost_L')
@@ -276,10 +277,17 @@ class SemiVAE(layers.MergeLayer):
         
         dec_init = self.concat_yz.get_output_for([y, z])
         dec_init = self.decoder_w.get_output_for(dec_init)
+        #dec_init = self.decoder_w.get_output_for(z)
         # shift embs
         embs_shifted = T.zeros_like(embs)
         embs_shifted = T.set_subtensor(embs_shifted[:, 1:, :], embs[:, :-1, :])
-        #embs_shifted = T.set_subtensor(embs_shifted[0], T.dot(y, self.init_w))
+        #embs_shifted = T.set_subtensor(embs_shifted[:, 0, :], T.dot(y, self.init_w))
+
+        if word_dropout != 0.0:
+            mask_decoder = self.mrg_srng.binomial(x.shape[:2], p=1-word_dropout, dtype=theano.config.floatX)
+            mask_decoder = mask_decoder[:, :, None]
+            embs_shifted = embs_shifted * mask_decoder
+
         dec = self.decoder.get_output_for([embs_shifted, m, dec_init])
         dec = self.decoder_shp.get_output_for(dec)
         pred_prob = self.decoder_x.get_output_for(dec)
@@ -318,7 +326,7 @@ class SemiVAE(layers.MergeLayer):
         for i in xrange(self.num_classes):
             y = T.zeros([embs_all.shape[0], self.num_classes])
             y = T.set_subtensor(y[:, i], 1)
-            cost_L = self.get_cost_L([x_sub, embs_sub, m_sub, y], kl_w)
+            cost_L = self.get_cost_L([x_sub, embs_sub, m_sub, y], kl_w, 0)
             weighted_cost_L += prob_ys_given_x[:,i] * cost_L
 
         entropy_y_given_x = objectives.categorical_crossentropy(prob_ys_given_x, prob_ys_given_x)
@@ -337,9 +345,9 @@ class SemiVAE(layers.MergeLayer):
         return cost_C
 
 
-    def get_cost_for_label(self, inputs, kl_w):
+    def get_cost_for_label(self, inputs, kl_w, word_dropout):
         x_all, embs_all, m_all, x_sub, embs_sub, m_sub, y = inputs
-        cost_L = self.get_cost_L([x_sub, embs_sub, m_sub, y], kl_w)
+        cost_L = self.get_cost_L([x_sub, embs_sub, m_sub, y], kl_w, word_dropout)
         cost_C = self.get_cost_C([x_all, embs_all, m_all, y])
         return cost_L.mean() + self.beta * cost_C.mean()
 
@@ -349,7 +357,7 @@ class SemiVAE(layers.MergeLayer):
         return cost_U.mean()
 
 
-    def get_cost_together(self, inputs_l, inputs_u, kl_w):
+    def get_cost_together(self, inputs_l, inputs_u, kl_w, word_dropout = 0.0):
         x_l_all, m_l_all, x_l_sub, m_l_sub, y_l = inputs_l # l for label u for unlabel
         x_u_all, m_u_all, x_u_sub, m_u_sub = inputs_u
 
@@ -362,10 +370,11 @@ class SemiVAE(layers.MergeLayer):
         inputs_l_with_emb = [x_l_all, embs_l_all, m_l_all, x_l_sub, embs_l_sub, m_l_sub, y_l]
         inputs_u_with_emb = [x_u_all, embs_u_all, m_u_all, x_u_sub, embs_u_sub, m_u_sub]
 
-        cost_for_label = self.get_cost_for_label(inputs_l_with_emb, kl_w) * x_l_all.shape[0]
+        cost_for_label = self.get_cost_for_label(inputs_l_with_emb, kl_w, word_dropout) * x_l_all.shape[0]
         cost_for_unlabel = self.get_cost_for_unlabel(inputs_u_with_emb, kl_w) * x_u_all.shape[0]
-        cost_together = (cost_for_label + cost_for_unlabel)/(x_l_all.shape[0] + x_u_all.shape[0])
+        cost_together = (cost_for_label + cost_for_unlabel) / (x_l_all.shape[0] + x_u_all.shape[0])
         cost_together += self.get_cost_prior() * self.decay_rate
+
         return cost_together
 
 
@@ -398,6 +407,7 @@ class SemiVAE(layers.MergeLayer):
         params += self.encoder_mu.get_params()
         params += self.encoder_log_var.get_params()
         params += self.decoder_w.get_params()
+        #params += [self.init_w]
         params += self.decoder.get_params()
         params += self.decoder_x.get_params()
         params += self.classifier_helper.get_params()

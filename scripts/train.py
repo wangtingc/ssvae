@@ -20,7 +20,7 @@ import os
 
 def init_configurations():
     params = {}
-    params['exp_name'] = 'semi_lstm_nodropout_1w'
+    params['exp_name'] = 'semi_1w_wd'
     params['data'] = 'imdb'
     params['data_path'] = '../data/proc/imdb_u.pkl.gz' # to be tested
     params['dict_path'] = '../data/proc/imdb_u.dict.pkl.gz'
@@ -47,6 +47,7 @@ def init_configurations():
     params['load_weights_path'] = None
     params['num_seqs'] = None
     params['len_seqs'] = 100
+    params['word_dropout'] = 0.5
     return params
 
 
@@ -178,7 +179,7 @@ def build_model(params, w_emb):
     inputs_l = [x_l_all, m_l_all, x_l_sub, m_l_sub, y_l]
     inputs_u = [x_u_all, m_u_all, x_u_sub, m_u_sub]
 
-    cost = semi_vae.get_cost_together(inputs_l, inputs_u, kl_w)
+    cost = semi_vae.get_cost_together(inputs_l, inputs_u, kl_w, params['word_dropout'])
     acc = semi_vae.get_cost_test([x_l_all, m_l_all, y_l])
 
     network_params = semi_vae.get_params()
@@ -260,6 +261,8 @@ def train(params):
             anneal_value = (anneal_value / params['annealing_width']).astype(theano.config.floatX)
             kl_w = np.float32(1) if anneal_value > 7.0 else 1/(1 + np.exp(-anneal_value))
             kl_w = kl_w.astype(theano.config.floatX)
+            # debug
+            kl_w = np.float32(0)
                 
             #print x_l_all.shape, x_u_all.shape
             #print x_l_sub.shape, x_u_sub.shape
