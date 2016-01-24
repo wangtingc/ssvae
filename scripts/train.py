@@ -20,7 +20,7 @@ import os
 
 def init_configurations():
     params = {}
-    params['exp_name'] = 'semi_1w_wd'
+    params['exp_name'] = 'semi_1w_sc'
     params['data'] = 'imdb'
     params['data_path'] = '../data/proc/imdb_u.pkl.gz' # to be tested
     params['dict_path'] = '../data/proc/imdb_u.dict.pkl.gz'
@@ -47,7 +47,7 @@ def init_configurations():
     params['load_weights_path'] = None
     params['num_seqs'] = None
     params['len_seqs'] = 100
-    params['word_dropout'] = 0.5
+    params['word_dropout'] = 0.0
     return params
 
 
@@ -178,7 +178,9 @@ def build_model(params, w_emb):
 
     inputs_l = [x_l_all, m_l_all, x_l_sub, m_l_sub, y_l]
     inputs_u = [x_u_all, m_u_all, x_u_sub, m_u_sub]
-
+    
+    embs_l_sub = semi_vae.embed_layer.get_output_for(x_l_sub)
+    cost_l = semi_vae.get_cost_L([x_l_sub, embs_l_sub, m_l_sub, y_l], kl_w, 0)
     cost = semi_vae.get_cost_together(inputs_l, inputs_u, kl_w, params['word_dropout'])
     acc = semi_vae.get_cost_test([x_l_all, m_l_all, y_l])
 
@@ -194,17 +196,18 @@ def build_model(params, w_emb):
 
     #f_train =theano.function([x, m], pred)
     print inputs_l + inputs_u
+    f_debug = theano.function([x_l_sub, m_l_sub, y_l, kl_w], cost_l)
     f_train = theano.function(inputs_l + inputs_u + [kl_w], cost, updates = params_update)
     f_test = theano.function([x_l_all, m_l_all, y_l], acc)
 
-    return semi_vae, f_train, f_test
+    return semi_vae, f_debug, f_train, f_test
 
 
 def train(params):
     train, dev, test, unlabel, wdict, w_emb = load_data(params)
     #import numpy as np
     #w_emb = np.random.rand(200000, 100).astype('float32')
-    semi_vae, f_train, f_test = build_model(params, w_emb)
+    semi_vae, f_debug, f_train, f_test = build_model(params, w_emb)
     
     #assert params['num_samples_train'] % params['num_batches_train'] == 0
     #assert params['num_samples_unlabel'] % params['num_batches_train'] == 0
@@ -268,8 +271,11 @@ def train(params):
             #print x_l_sub.shape, x_u_sub.shape
             train_cost = f_train(*(inputs_l + inputs_u + [kl_w]))
             #train_acc = f_test(x_l_all, m_l_all, y_l)
+            y_l = np.asarray(y_l, dtype=theano.config.floatX)
+            cost_l_rig = f_debug(x_l_sub, m_l_sub, y_l, kl_w)
+            cost_l_wor = f_debug(x_l_sub, m_l_sub, 1-y_l, kl_w)
             #print time.time() - time_s
-            train_acc = 0
+            train_acc = (cost_l_rig > cost_l_wor).mean()
             train_costs.append(train_cost)
             train_accs.append(train_acc)
             time_costs.append(time.time() - time_s)

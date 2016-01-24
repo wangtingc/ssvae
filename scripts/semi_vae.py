@@ -12,6 +12,7 @@ from lasagne import objectives
 from lasagne import init
 from lasagne import regularization
 from theano.sandbox.rng_mrg import MRG_RandomStreams
+from sc_lstm import ScLSTMLayer
 
 
 __All__ = ['SemiVAE']
@@ -101,7 +102,7 @@ class SamplerLayer(layers.MergeLayer):
 
 # this class is for getting the hidden output of sentence classification
 # . Or used for sentence encoder
-# there is a doubt wether mean operation is better for encoder
+# there is a doubt whether mean operation is better for encoder
 class SentMeanEncoder(layers.MergeLayer):
     def __init__(self, incomings,
                  num_units,
@@ -218,10 +219,10 @@ class SemiVAE(layers.MergeLayer):
         # merge encoder_mu and encoder_log_var to get z.
         self.sampler = SamplerLayer([self.encoder_mu, self.encoder_log_var])
 
-        self.concat_yz = layers.ConcatLayer([label_layer, self.sampler], axis=1)
+        #self.concat_yz = layers.ConcatLayer([label_layer, self.sampler], axis=1)
         #self.init_w = theano.shared(np.random.rand(2, self.dim_emb))
 
-        self.decoder_w = layers.DenseLayer(self.concat_yz,
+        self.decoder_w = layers.DenseLayer(self.sampler,
             num_units = self.num_units_hidden_rnn,
             nonlinearity = nonlinearities.identity,
             b = init.Constant(0.0),
@@ -229,9 +230,10 @@ class SemiVAE(layers.MergeLayer):
         
         # the sentence and mask used here is different from encoder, 
         # it is not safe to used 'embed_layer' and 'mask_layer'....
-        self.decoder = layers.LSTMLayer(self.embed_layer,
+        self.decoder = ScLSTMLayer(self.embed_layer,
             num_units = self.num_units_hidden_rnn,
             hid_init = self.decoder_w,
+            da_init = label_layer,
             mask_input = mask_layer,
             grad_clipping = 0, 
             )
@@ -275,9 +277,9 @@ class SemiVAE(layers.MergeLayer):
         log_var_z = self.encoder_log_var.get_output_for(enc)
         z = self.sampler.get_output_for([mu_z, log_var_z])
         
-        dec_init = self.concat_yz.get_output_for([y, z])
-        dec_init = self.decoder_w.get_output_for(dec_init)
-        #dec_init = self.decoder_w.get_output_for(z)
+        #dec_init = self.concat_yz.get_output_for([y, z])
+        #dec_init = self.decoder_w.get_output_for(dec_init)
+        dec_init = self.decoder_w.get_output_for(z)
         # shift embs
         embs_shifted = T.zeros_like(embs)
         embs_shifted = T.set_subtensor(embs_shifted[:, 1:, :], embs[:, :-1, :])
@@ -288,7 +290,7 @@ class SemiVAE(layers.MergeLayer):
             mask_decoder = mask_decoder[:, :, None]
             embs_shifted = embs_shifted * mask_decoder
 
-        dec = self.decoder.get_output_for([embs_shifted, m, dec_init])
+        dec = self.decoder.get_output_for([embs_shifted, m, dec_init, y])
         dec = self.decoder_shp.get_output_for(dec)
         pred_prob = self.decoder_x.get_output_for(dec)
         # we do not know the batch_size and seqlen until inputs are given
@@ -332,6 +334,10 @@ class SemiVAE(layers.MergeLayer):
         entropy_y_given_x = objectives.categorical_crossentropy(prob_ys_given_x, prob_ys_given_x)
         cost_U = weighted_cost_L - entropy_y_given_x
 
+        # save internal results for debugging
+        self.cost_u_Lw = weighted_cost_L
+        self.cost_u_E = - entropy_y_given_x
+
         return cost_U
 
 
@@ -349,6 +355,9 @@ class SemiVAE(layers.MergeLayer):
         x_all, embs_all, m_all, x_sub, embs_sub, m_sub, y = inputs
         cost_L = self.get_cost_L([x_sub, embs_sub, m_sub, y], kl_w, word_dropout)
         cost_C = self.get_cost_C([x_all, embs_all, m_all, y])
+        # save internal results
+        self.cost_l_L = cost_L
+        self.cost_l_C = cost_C
         return cost_L.mean() + self.beta * cost_C.mean()
 
 

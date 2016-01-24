@@ -29,7 +29,7 @@ def init_configurations():
     params['dim_z'] = 50
     params['num_units_hidden_common'] = 100
     params['num_units_hidden_rnn'] = 128
-    params['num_samples_label'] = 22500 # the first n samples in trainset.
+    params['num_samples_label'] = 20000 # the first n samples in trainset.
     params['epoch'] = 200
     params['valid_period'] = 1 # temporary exclude validset
     params['test_period'] = 1
@@ -55,7 +55,7 @@ def load_data(params):
             unlabel = pkl.load(f)
 
             # split devset from train set
-            valid_portion = 0.10 # only for imdb dataset (no devset)
+            valid_portion = 0.20 # only for imdb dataset (no devset)
             train_pos_idx = np.where(np.asarray(train[1]) ==  1)[0] # np.where return tuple 
             train_neg_idx = np.where(np.asarray(train[1]) ==  0)[0]
             train_pos = [train[0][i] for i in train_pos_idx]
