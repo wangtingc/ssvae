@@ -24,20 +24,21 @@ def init_configurations():
     params['data'] = 'imdb'
     params['data_path'] = '../data/proc/imdb_u.pkl.gz' # to be tested
     params['dict_path'] = '../data/proc/imdb_u.dict.pkl.gz'
-    params['emb_path'] = '../data/proc/imdb_emb_u.pkl.gz'
+    #params['emb_path'] = '../data/proc/imdb_emb_u.pkl.gz'
+    params['emb_path'] = None
     params['num_batches_train'] = 1250
     params['batch_size'] = 100 # for testing and dev
     params['num_classes'] = 2
     params['dim_z'] = 15
     params['num_units_hidden_common'] = 100
-    params['num_units_hidden_rnn'] = 128
+    params['num_units_hidden_rnn'] = 512
     params['num_samples_label'] = 20000 # the first n samples in trainset.
     params['epoch'] = 200
     params['valid_period'] = 10 # temporary exclude validset
     params['test_period'] = 10
     params['alpha'] = 0.2
     params['learning_rate'] = 0.0001
-    params['num_words'] = 10000
+    params['num_words'] = 20000
     params['dropout'] = 0.0 # to be tested
     params['weight_decay_rate'] = 2e-6
     params['annealing_center'] = 20
@@ -131,15 +132,16 @@ def load_data(params):
                 for i in wdict.values():
                     max_idx = i if max_idx < i else max_idx
                 params['num_words'] = max_idx + 1
-            params['dim_emb'] = 100 # set manually
-            w_emb = np.random.rand([params['num_words'], params['dim_emb']])
+            params['dim_emb'] = 200 # set manually
+            w_emb = np.random.rand(params['num_words'], params['dim_emb'])
+            w_emb = w_emb.astype(theano.config.floatX)
     else:
         # other dataset, e.g. newsgroup and sentiment PTB
         pass
     
     # filter the dict for all dataset
     assert params['num_words'] <= w_emb.shape[0]
-    if params['num_words'] != w_emb.shape[0]:
+    if not params['emb_path'] or params['num_words'] != w_emb.shape[0]:
         train = [filter_words(train[0], params['num_words']), train[1]]
         dev = [filter_words(dev[0], params['num_words']), dev[1]]
         test = [filter_words(test[0], params['num_words']), test[1]]
@@ -237,8 +239,11 @@ def train(params):
     
     train_epoch_costs = []
     train_epoch_accs = []
+    train_epoch_ppls = []
     dev_epoch_accs = []
+    dev_epoch_ppls = []
     test_epoch_accs = []
+    test_epoch_ppls = []
 
     for epoch in xrange(params['epoch']):
         print('Epoch:', epoch)
@@ -246,6 +251,7 @@ def train(params):
         train_costs = []
         time_costs = []
         train_accs = []
+        train_ppls = []
         #debug
         #num_batches_train = 1
         #num_batches_dev = 1
@@ -275,29 +281,39 @@ def train(params):
             train_cost = f_train(*(inputs_l + inputs_u + [kl_w]))
             #train_acc = f_test(x_l_all, m_l_all, y_l)
             y_l = np.asarray(y_l, dtype=theano.config.floatX)
-            cost_l_rig = f_debug(x_l_sub, m_l_sub, y_l, kl_w)
-            cost_l_wor = f_debug(x_l_sub, m_l_sub, 1-y_l, kl_w)
+            cost_l_rig = f_debug(x_l_sub, m_l_sub, y_l, 0)
+            cost_l_wro = f_debug(x_l_sub, m_l_sub, 1-y_l, 0)
             #print time.time() - time_s
-            train_acc = (cost_l_rig > cost_l_wor).mean()
+            train_acc = (cost_l_rig > cost_l_wro).mean()
+            train_ppl = np.exp(cost_l_rig.sum() / m_l_sub.sum())
             train_costs.append(train_cost)
             train_accs.append(train_acc)
+            train_ppls.append(train_ppl)
             time_costs.append(time.time() - time_s)
 
         train_epoch_costs.append(np.mean(train_costs))
         train_epoch_accs.append(np.mean(train_accs))
+        train_epoch_ppls.append(np.mean(train_ppls))
         print('train_cost.mean()', np.mean(train_costs))
         print('train_acc.mean()', np.mean(train_accs))
+        print('train_ppl.mean()', np.mean(train_ppls))
         print('time_cost.mean()', np.mean(time_costs))
         
         dev_accs = []
+        dev_ppls = []
         for batch in xrange(num_batches_dev):
             x, y = iter_dev.next()
-            x, m = prepare_data(x)
-            dev_acc = f_test(x, m, y)
+            x_all, m_all = prepare_data(x)
+            x_sub, m_sub = prepare_data(x, params['num_seqs'], params['len_seqs'])
+            dev_acc = f_test(x_all, m_all, y)
+            dev_l = f_debug(x_sub, m_sub, y, 0)
             dev_accs.append(dev_acc)
+            dev_ppls.append(dev_l)
     
         dev_epoch_accs.append(np.mean(dev_accs))
-        print('dev_accuracy.mean()', np.mean(dev_accs))
+        dev_epoch_ppls.append(np.mean(dev_ppls))
+        print('dev_acc.mean()', np.mean(dev_accs))
+        print('dev_ppl.mean()', np.mean(dev_ppls))
 
         test_accs = []
         for batch in xrange(num_batches_test):

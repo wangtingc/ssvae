@@ -116,8 +116,8 @@ class SentMeanEncoder(layers.MergeLayer):
         super(SentMeanEncoder, self).__init__(incomings)
         sent_input_layer, mask_input_layer = incomings
         self.num_units = num_units
-        self.input_dropout_layer = layers.DropoutLayer(self.input_layer, p = dropout)
-        self.lstm_layer = layers.LSTMLayer(input_dropout_layer,
+        self.input_dropout_layer = layers.DropoutLayer(sent_input_layer, p = dropout)
+        self.lstm_layer = layers.LSTMLayer(self.input_dropout_layer,
             num_units = self.num_units,
             mask_input = mask_input_layer,
             grad_clipping = 0 #to be tested
