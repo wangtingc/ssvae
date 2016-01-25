@@ -1,3 +1,6 @@
+
+import matplotlib
+matplotlib.use('Agg') # not to use X-desktop
 import time
 import theano
 import theano.tensor as T
@@ -12,9 +15,6 @@ from batchiterator import BatchIterator
 from semi_vae import SemiVAE
 from misc import *
 import os
-
-import matplotlib
-matplotlib.use('Agg') # not to use X-desktop
 import matplotlib.pyplot as plt
 
 def init_configurations():
@@ -136,23 +136,6 @@ def load_data(params):
         w_emb = w_emb[: params['num_words'], :]
 
     return train, dev, test, unlabel, wdict, w_emb
-
-
-def prepare_data(x):
-    x_len = []
-    max_len = 0
-    for s in x:
-        x_len.append(len(s))
-        if max_len < len(s):
-            max_len = len(s)
-
-    xx = np.zeros([len(x), max_len + 1], dtype='int32')
-    m = np.zeros([len(x), max_len + 1], dtype=theano.config.floatX)
-    for i, s in enumerate(x):
-        xx[i, :x_len[i]] = x[i]
-        m[i, :x_len[i] + 1] = 1
-
-    return xx, m
 
 
 def build_model(params, w_emb):

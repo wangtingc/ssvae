@@ -32,9 +32,9 @@ def init_configurations():
     params['test_period'] = 1
     params['alpha'] = 0.1
     params['learning_rate'] = 0.0001
-    params['n_words'] = 30000
-    params['dropout'] = 0.0 # set 0 to no use
-    params['exp_name'] = 'clf_lstm_nodropout_3w'
+    params['n_words'] = 10000
+    params['dropout'] = 0.5 # set 0 to no use
+    params['exp_name'] = 'clf_lstm_dropout_1w'
     return params
 
 
@@ -151,29 +151,22 @@ def build_model(params, w_emb):
     l_in = layers.InputLayer((params['batch_size'], None))
     l_mask = layers.InputLayer((params['batch_size'],  None))
     l1 = layers.EmbeddingLayer(l_in, params['n_words'], params['dim_emb'], W=w_emb)
-    embs = l1.get_output_for(x)
-    f_embs = theano.function([x], embs)
-    #print f_embs([[1,2], [2,2]])
-    
-    # dropout
     l1_dropout = layers.DropoutLayer(l1, params['dropout'])
-    embs = l1_dropout.get_output_for(embs)
-
     l2 = layers.LSTMLayer(l1_dropout, params['dim_z'], mask_input = l_mask)
-    h = l2.get_output_for([embs, m])
     l3 = MeanLayer((l2, l_mask))
-    h_mean = l3.get_output_for((h, m))
+    l3_dropout = layers.DropoutLayer(l3, params['dropout'])
+    l4 = layers.DenseLayer(l3_dropout, params['n_classes'], nonlinearity = nonlinearities.softmax)
+    network_params = layers.get_all_params(l4)
     
     # dropout
-    l3_dropout = layers.DropoutLayer(l3, params['dropout'])
+    embs = l1.get_output_for(x)
+    embs = l1_dropout.get_output_for(embs)
+    h = l2.get_output_for([embs, m])
+    h_mean = l3.get_output_for((h, m))
+    # dropout
     h_mean = l3_dropout.get_output_for(h_mean)
-
-    l4 = layers.DenseLayer(l3_dropout, params['n_classes'], nonlinearity = nonlinearities.softmax)
     pred = l4.get_output_for(h_mean)
-
     cost = objectives.categorical_crossentropy(pred, y).mean()
-    acc = T.eq(T.argmax(pred, axis=1), y).mean()
-    network_params = layers.get_all_params(l4)
 
     for param in network_params:
         print param.get_value().shape, param.name
@@ -182,6 +175,18 @@ def build_model(params, w_emb):
 
     #f_train =theano.function([x, m], pred)
     f_train = theano.function([x, m, y], cost, updates = params_update)
+
+    # dropout
+    embs = l1.get_output_for(x)
+    embs = l1_dropout.get_output_for(embs, deterministic=True)
+    h = l2.get_output_for([embs, m])
+    l3 = MeanLayer((l2, l_mask))
+    h_mean = l3.get_output_for((h, m))
+    # dropout
+    h_mean = l3_dropout.get_output_for(h_mean, deterministic=True)
+    pred = l4.get_output_for(h_mean)
+    acc = T.eq(T.argmax(pred, axis=1), y).mean()
+
     f_test = theano.function([x, m, y], acc)
 
     return f_train, f_test

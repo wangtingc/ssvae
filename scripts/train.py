@@ -35,7 +35,7 @@ def init_configurations():
     params['epoch'] = 200
     params['valid_period'] = 10 # temporary exclude validset
     params['test_period'] = 10
-    params['alpha'] = 0.1
+    params['alpha'] = 0.2
     params['learning_rate'] = 0.0001
     params['num_words'] = 10000
     params['dropout'] = 0.0 # to be tested
@@ -48,6 +48,7 @@ def init_configurations():
     params['num_seqs'] = None
     params['len_seqs'] = 100
     params['word_dropout'] = 0.0
+    params['dropout'] = 0.0
     return params
 
 
@@ -163,6 +164,7 @@ def build_model(params, w_emb):
                        beta,
                        params['num_units_hidden_rnn'],
                        params['weight_decay_rate'],
+                       params['dropout'],
                        )
 
     x_l_all = T.imatrix()
@@ -178,9 +180,11 @@ def build_model(params, w_emb):
 
     inputs_l = [x_l_all, m_l_all, x_l_sub, m_l_sub, y_l]
     inputs_u = [x_u_all, m_u_all, x_u_sub, m_u_sub]
-    
+        
+    # debug
     embs_l_sub = semi_vae.embed_layer.get_output_for(x_l_sub)
     cost_l = semi_vae.get_cost_L([x_l_sub, embs_l_sub, m_l_sub, y_l], kl_w, 0)
+
     cost = semi_vae.get_cost_together(inputs_l, inputs_u, kl_w, params['word_dropout'])
     acc = semi_vae.get_cost_test([x_l_all, m_l_all, y_l])
 
@@ -214,17 +218,16 @@ def train(params):
     assert params['num_samples_dev'] % params['batch_size'] == 0
     assert params['num_samples_test'] % params['batch_size'] == 0
     
-    # semi = {train, unlabel}
     num_batches_train = params['num_batches_train']
     num_batches_dev = params['num_samples_dev'] / params['batch_size']
     num_batches_test = params['num_samples_test'] / params['batch_size']
 
-    print num_batches_train, num_batches_dev, num_batches_test
+    print(num_batches_train, num_batches_dev, num_batches_test)
 
     batch_size_l = params['num_samples_train'] / num_batches_train
     batch_size_u = params['num_samples_unlabel'] / num_batches_train
 
-    print num_batches_train, num_batches_dev, num_batches_test
+    print(num_batches_train, num_batches_dev, num_batches_test)
     
     testing = False if params['num_seqs'] or params['len_seqs'] else True
     iter_train = BatchIterator(params['num_samples_train'], batch_size_l, data = train, testing = testing)

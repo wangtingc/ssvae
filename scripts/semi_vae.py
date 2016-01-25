@@ -106,6 +106,7 @@ class SamplerLayer(layers.MergeLayer):
 class SentMeanEncoder(layers.MergeLayer):
     def __init__(self, incomings,
                  num_units,
+                 dropout,
                  ):
         '''
         params:
@@ -115,18 +116,22 @@ class SentMeanEncoder(layers.MergeLayer):
         super(SentMeanEncoder, self).__init__(incomings)
         sent_input_layer, mask_input_layer = incomings
         self.num_units = num_units
-        self.lstm_layer = layers.LSTMLayer(sent_input_layer,
+        self.input_dropout_layer = layers.DropoutLayer(self.input_layer, p = dropout)
+        self.lstm_layer = layers.LSTMLayer(input_dropout_layer,
             num_units = self.num_units,
             mask_input = mask_input_layer,
             grad_clipping = 0 #to be tested
             )
+        self.output_dropout_layer = layers.DropoutLayer(self.lstm_layer, p = dropout)
 
 
-    def get_output_for(self, inputs):
+    def get_output_for(self, inputs, deterministic = False):
         sent_input, mask_input =  inputs
+        sent_input = self.input_dropout_layer.get_output_for(sent_input, deterministic = deterministic)
         lstm_output = self.lstm_layer.get_output_for(inputs)
         lstm_mean = (lstm_output * mask_input[:, :, None]).sum(axis = 1)
         lstm_mean = lstm_mean / mask_input.sum(axis=1)[:, None]
+        lstm_mean = self.output_dropout_layer.get_output_for(lstm_mean, deterministic = deterministic)
         return lstm_mean
 
 
@@ -151,6 +156,7 @@ class SemiVAE(layers.MergeLayer):
                  beta,
                  num_units_hidden_rnn,
                  decay_rate,
+                 dropout,
                  ):
         '''
          params:
@@ -160,6 +166,8 @@ class SemiVAE(layers.MergeLayer):
              dim_z: the dimension of z and num_units_output for encoders BaiscLayer
              beta: reweighted alpha
              num_units_hidden_rnn: num_units_hidden for recurrent layers
+             decay_rate: for weight regulazition
+             dropout: dropout rate
         '''
 
         super(SemiVAE, self).__init__(incomings)
@@ -176,6 +184,7 @@ class SemiVAE(layers.MergeLayer):
         self.beta = beta
         self.num_units_hidden_rnn = num_units_hidden_rnn
         self.decay_rate = decay_rate
+        self.dropout = dropout
         self.grad_clipping = 0 # to be tested
             
         # here we can try LSTMlayer and return the last output
@@ -250,6 +259,7 @@ class SemiVAE(layers.MergeLayer):
         self.classifier_helper = SentMeanEncoder(
             [self.embed_layer, mask_layer],
             num_units = self.num_units_hidden_rnn,
+            dropout = self.dropout,
             )
 
         self.classifier = layers.DenseLayer(
@@ -390,7 +400,7 @@ class SemiVAE(layers.MergeLayer):
     def get_cost_test(self, inputs):
         x, m, y = inputs
         embs = self.embed_layer.get_output_for(x)
-        classifier_enc = self.classifier_helper.get_output_for([embs, m])
+        classifier_enc = self.classifier_helper.get_output_for([embs, m], deterministic=True)
         prob_ys_given_x = self.classifier.get_output_for(classifier_enc)
         #cost_test = objectives.categorical_crossentropy(prob_ys_given_x, y)
         cost_acc = T.eq(T.argmax(prob_ys_given_x, axis=1), T.argmax(y, axis=1))
