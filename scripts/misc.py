@@ -39,7 +39,7 @@ def load_weights(network_params, load_weights_path):
     print 'Loading parameters from ' + load_weights_path
     values = pkl.load(open(load_weights_path, 'rb'))
     for p, v in zip(network_params, values):
-        p.set_values(v)
+        p.set_value(v)
 
 
 def analyze(data, save_path):
@@ -55,9 +55,9 @@ def analyze(data, save_path):
 
 def prepare_data(x, n_seq = None, l_seq = None):
     '''
-    this function calculate x and mask. if n_seq is given, then extract 
+    this function calculate x and mask. if n_seq is given, then extract
     n_seqs sentences. if l_seq is given, then extract sentences shorter
-    than l_seq 
+    than l_seq
     '''
     assert not(n_seq and l_seq)
     # flatten sentences or select n sentences
@@ -92,13 +92,22 @@ def prepare_data(x, n_seq = None, l_seq = None):
         x_len.append(len(s))
         if max_len < len(s):
             max_len = len(s)
-    
+
     # append <EOS> to data
     xx = np.zeros([len(x), max_len + 1], dtype='int32')
     m = np.zeros([len(x), max_len + 1], dtype=theano.config.floatX)
     for i, s in enumerate(x):
         xx[i, :x_len[i]] = x[i]
         m[i, :x_len[i] + 1] = 1
+
+    if (n_seq or l_seq) and max_len > 200:
+        xx = xx[:, :300]
+        m = m[:, :300]
+    '''
+    if not(n_seq or l_seq) and max_len > 1000:
+        xx = xx[:, :1000]
+        m = m[:, :1000]
+    '''
 
     return xx, m
 

@@ -20,7 +20,7 @@ import os
 
 def init_configurations():
     params = {}
-    params['exp_name'] = 'semi_1w_sc'
+    params['exp_name'] = 'semi_20k_sc_0.2_5k'
     params['data'] = 'imdb'
     params['data_path'] = '../data/proc/imdb_u.pkl.gz' # to be tested
     params['dict_path'] = '../data/proc/imdb_u.dict.pkl.gz'
@@ -29,17 +29,16 @@ def init_configurations():
     params['num_batches_train'] = 1250
     params['batch_size'] = 100 # for testing and dev
     params['num_classes'] = 2
-    params['dim_z'] = 15
+    params['dim_z'] = 50
     params['num_units_hidden_common'] = 100
     params['num_units_hidden_rnn'] = 512
-    params['num_samples_label'] = 20000 # the first n samples in trainset.
+    params['num_samples_train'] = 10000 # the first n samples in trainset.
     params['epoch'] = 200
     params['valid_period'] = 10 # temporary exclude validset
     params['test_period'] = 10
     params['alpha'] = 0.2
     params['learning_rate'] = 0.0001
     params['num_words'] = 20000
-    params['dropout'] = 0.0 # to be tested
     params['weight_decay_rate'] = 2e-6
     params['annealing_center'] = 20
     params['annealing_width'] = 2
@@ -47,9 +46,9 @@ def init_configurations():
     params['save_weights_path'] = '../results/semi_vae_' + params['exp_time'] + '.pkl'
     params['load_weights_path'] = None
     params['num_seqs'] = None
-    params['len_seqs'] = 100
+    params['len_seqs'] = 200
     params['word_dropout'] = 0.0
-    params['dropout'] = 0.0
+    params['dropout'] = 0.2
     return params
 
 
@@ -66,9 +65,15 @@ def load_data(params):
             test = pkl.load(f)
             unlabel = pkl.load(f)
 
+            np.random.seed(1234567890)
+            train_shuffle_idx = np.random.permutation(len(train[0]))
+            train_shuffle_x = [train[0][i] for i in train_shuffle_idx]
+            train_shuffle_y = [train[1][i] for i in train_shuffle_idx]
+            train = [train_shuffle_x, train_shuffle_y]
+
             # split devset from train set
             valid_portion = 0.20 # only for imdb dataset (no devset)
-            train_pos_idx = np.where(np.asarray(train[1]) ==  1)[0] # np.where return tuple 
+            train_pos_idx = np.where(np.asarray(train[1]) ==  1)[0] # np.where return tuple
             train_neg_idx = np.where(np.asarray(train[1]) ==  0)[0]
             train_pos = [train[0][i] for i in train_pos_idx]
             train_neg = [train[0][i] for i in train_neg_idx]
@@ -78,8 +83,8 @@ def load_data(params):
             dev_pos = [train_pos[i] for i in xrange(num_samples_train_pos, len(train_pos))]
             dev_neg = [train_neg[i] for i in xrange(num_samples_train_neg, len(train_neg))]
             # first #n_label for train, otherwise unlabelled
-            assert params['num_samples_label'] % 2 == 0
-            num_samples_per_label = params['num_samples_label'] / 2
+            assert params['num_samples_train'] % 2 == 0
+            num_samples_per_label = params['num_samples_train'] / 2
             assert num_samples_per_label <= num_samples_train_pos
             assert num_samples_per_label <= num_samples_train_neg
             train_pos_2_unlabel = [train_pos[i] for i in xrange(num_samples_per_label, num_samples_train_pos)]
@@ -109,7 +114,7 @@ def load_data(params):
             params['num_samples_test'] = len(test[0])
             params['num_samples_unlabel'] = len(unlabel[0])
             f.close()
-    
+
         print('loading dict from ', params['dict_path'])
         with gzip.open(params['dict_path']) as f:
             wdict = pkl.load(f)
@@ -124,7 +129,7 @@ def load_data(params):
                 if params['num_words'] is None:
                     params['num_words'] = w_emb.shape[0]
                 f.close()
-        else:   
+        else:
             # use full dictionary  if num_words is not set
             print('initialize word embedding')
             if params['num_words'] is None:
@@ -138,7 +143,7 @@ def load_data(params):
     else:
         # other dataset, e.g. newsgroup and sentiment PTB
         pass
-    
+
     # filter the dict for all dataset
     assert params['num_words'] <= w_emb.shape[0]
     if not params['emb_path'] or params['num_words'] != w_emb.shape[0]:
@@ -155,10 +160,11 @@ def build_model(params, w_emb):
     l_x = layers.InputLayer((None, None))
     l_m = layers.InputLayer((None, None))
     l_y = layers.InputLayer((None, params['num_classes']))
-    
+
     #debug
     #params['num_samples_train'] = 22500
-    beta = params['alpha'] * params['num_samples_train'] / params['num_samples_label']
+    beta = params['alpha'] * (params['num_samples_train'] + params['num_samples_unlabel']) / params['num_samples_train']
+    print('beta', beta)
     semi_vae = SemiVAE([l_x, l_m, l_y],
                        w_emb,
                        params['num_units_hidden_common'],
@@ -182,7 +188,7 @@ def build_model(params, w_emb):
 
     inputs_l = [x_l_all, m_l_all, x_l_sub, m_l_sub, y_l]
     inputs_u = [x_u_all, m_u_all, x_u_sub, m_u_sub]
-        
+
     # debug
     embs_l_sub = semi_vae.embed_layer.get_output_for(x_l_sub)
     cost_l = semi_vae.get_cost_L([x_l_sub, embs_l_sub, m_l_sub, y_l], kl_w, 0)
@@ -193,7 +199,7 @@ def build_model(params, w_emb):
     network_params = semi_vae.get_params()
     if params['load_weights_path']:
         load_weights(network_params, params['load_weights_path'])
-            
+
 
     for param in network_params:
         print param.get_value().shape, param.name
@@ -214,12 +220,12 @@ def train(params):
     #import numpy as np
     #w_emb = np.random.rand(200000, 100).astype('float32')
     semi_vae, f_debug, f_train, f_test = build_model(params, w_emb)
-    
+
     #assert params['num_samples_train'] % params['num_batches_train'] == 0
     #assert params['num_samples_unlabel'] % params['num_batches_train'] == 0
     assert params['num_samples_dev'] % params['batch_size'] == 0
     assert params['num_samples_test'] % params['batch_size'] == 0
-    
+
     num_batches_train = params['num_batches_train']
     num_batches_dev = params['num_samples_dev'] / params['batch_size']
     num_batches_test = params['num_samples_test'] / params['batch_size']
@@ -230,13 +236,13 @@ def train(params):
     batch_size_u = params['num_samples_unlabel'] / num_batches_train
 
     print(num_batches_train, num_batches_dev, num_batches_test)
-    
+
     testing = False if params['num_seqs'] or params['len_seqs'] else True
     iter_train = BatchIterator(params['num_samples_train'], batch_size_l, data = train, testing = testing)
     iter_unlabel = BatchIterator(params['num_samples_unlabel'], batch_size_u, data = unlabel, testing = testing)
     iter_dev = BatchIterator(params['num_samples_dev'], params['batch_size'], data = dev, testing = testing)
     iter_test = BatchIterator(params['num_samples_test'], params['batch_size'], data = test, testing = testing)
-    
+
     train_epoch_costs = []
     train_epoch_accs = []
     train_epoch_ppls = []
@@ -275,7 +281,7 @@ def train(params):
             kl_w = kl_w.astype(theano.config.floatX)
             # debug
             kl_w = np.float32(0)
-                
+
             #print x_l_all.shape, x_u_all.shape
             #print x_l_sub.shape, x_u_sub.shape
             train_cost = f_train(*(inputs_l + inputs_u + [kl_w]))
@@ -298,7 +304,7 @@ def train(params):
         print('train_acc.mean()', np.mean(train_accs))
         print('train_ppl.mean()', np.mean(train_ppls))
         print('time_cost.mean()', np.mean(time_costs))
-        
+
         dev_accs = []
         dev_ppls = []
         for batch in xrange(num_batches_dev):
@@ -307,9 +313,10 @@ def train(params):
             x_sub, m_sub = prepare_data(x, params['num_seqs'], params['len_seqs'])
             dev_acc = f_test(x_all, m_all, y)
             dev_l = f_debug(x_sub, m_sub, y, 0)
+            dev_ppl = np.exp(dev_l.sum() / m_sub.sum())
             dev_accs.append(dev_acc)
-            dev_ppls.append(dev_l)
-    
+            dev_ppls.append(dev_ppl)
+
         dev_epoch_accs.append(np.mean(dev_accs))
         dev_epoch_ppls.append(np.mean(dev_ppls))
         print('dev_acc.mean()', np.mean(dev_accs))
