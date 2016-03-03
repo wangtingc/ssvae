@@ -336,7 +336,6 @@ def train(params):
 
         test_epoch_accs.append(np.mean(test_accs))
         print('test_accuracy.mean()', np.mean(test_accs))
-        print('')
 
         # mkdir
         if not os.path.exists(params['save_directory']):
@@ -358,13 +357,13 @@ def train(params):
 
         # save the results
         results = {}
-        results['train_costs'] = train_costs
-        results['train_diffs'] = train_diffs
-        results['train_accs'] = train_accs
-        results['train_ppls'] = train_ppls
-        results['dev_accs'] = dev_accs
-        results['dev_ppls'] = dev_ppls
-        results['test_accs'] = test_accs
+        results['train_costs'] = train_epoch_costs
+        results['train_diffs'] = train_epoch_diffs
+        results['train_accs'] = train_epoch_accs
+        results['train_ppls'] = train_epoch_ppls
+        results['dev_accs'] = dev_epoch_accs
+        results['dev_ppls'] = dev_epoch_ppls
+        results['test_accs'] = test_epoch_accs
         results_file_path = params['save_directory'] + os.sep + 'results.pkl'
         pkl.dump(results, open(results_file_path, 'wb'))
 
@@ -373,6 +372,7 @@ def train(params):
             network_params = semi_vae.get_params()
             save_weights(network_params, params['save_weights_path'])
 
+        print('')
 
 params = init_configurations()
 train(params)
