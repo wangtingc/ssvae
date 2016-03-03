@@ -63,7 +63,7 @@ class BasicLayer(layers.Layer):
 
 
     def get_output_shape_for(self, input_shape):
-        return [input_shape[0], self.num_units_hidden]
+        return (input_shape[0], self.num_units_hidden)
 
 
     def get_params(self):
@@ -290,24 +290,31 @@ class SemiVAE(layers.MergeLayer):
         #dec_init = self.concat_yz.get_output_for([y, z])
         #dec_init = self.decoder_w.get_output_for(dec_init)
         dec_init = self.decoder_w.get_output_for(z)
-        # shift embs
-        embs_shifted = T.zeros_like(embs)
-        embs_shifted = T.set_subtensor(embs_shifted[:, 1:, :], embs[:, :-1, :])
+
+        # inverse embs
+        embs_inverse = embs[:, ::-1, :]
+        m_inverse = m[:, ::-1]
+        x_inverse = x[:, ::-1]
+        x_inverse_shifted = T.zeros_like(x_inverse)
+        x_inverse_shifted = T.set_subtensor(x_inverse_shifted[:, :-1], x_inverse[:, 1:])
+        # shift embs if not inversing
+        #embs_shifted = T.zeros_like(embs)
+        #embs_shifted = T.set_subtensor(embs_shifted[:, 1:, :], embs[:, :-1, :])
         #embs_shifted = T.set_subtensor(embs_shifted[:, 0, :], T.dot(y, self.init_w))
 
         if word_dropout != 0.0:
-            mask_decoder = self.mrg_srng.binomial(x.shape[:2], p=1-word_dropout, dtype=theano.config.floatX)
+            mask_decoder = self.mrg_srng.binomial(x_inverse.shape[:2], p=1-word_dropout, dtype=theano.config.floatX)
             mask_decoder = mask_decoder[:, :, None]
-            embs_shifted = embs_shifted * mask_decoder
+            embs_inverse = embs_inverse * mask_decoder
 
-        dec = self.decoder.get_output_for([embs_shifted, m, dec_init, y])
+        dec = self.decoder.get_output_for([embs_inverse, m_inverse, dec_init, y])
         dec = self.decoder_shp.get_output_for(dec)
         pred_prob = self.decoder_x.get_output_for(dec)
         # we do not know the batch_size and seqlen until inputs are given
         pred_prob = pred_prob.reshape([embs.shape[0] * embs.shape[1], -1])
         
-        l_x = objectives.categorical_crossentropy(pred_prob, x.flatten())
-        l_x = (l_x.reshape([embs.shape[0], -1]) * m).sum(1)
+        l_x = objectives.categorical_crossentropy(pred_prob, x_inverse_shifted.flatten())
+        l_x = (l_x.reshape([embs.shape[0], -1]) * m_inverse).sum(1)
         l_z = ((mu_z ** 2 + T.exp(log_var_z) - 1 - log_var_z) * 0.5).sum(1)
 
         cost_L = l_x + l_z * kl_w
@@ -358,17 +365,18 @@ class SemiVAE(layers.MergeLayer):
         prob_ys_given_x = self.classifier.get_output_for(classifier_enc)
         prob_y_given_x = (prob_ys_given_x * y).sum(1)
         cost_C = -T.log(prob_y_given_x)
-        return cost_C
+        acc = T.eq(T.argmax(prob_ys_given_x, axis=1), T.argmax(y, axis=1))
+        return cost_C, acc
 
 
     def get_cost_for_label(self, inputs, kl_w, word_dropout):
         x_all, embs_all, m_all, x_sub, embs_sub, m_sub, y = inputs
         cost_L = self.get_cost_L([x_sub, embs_sub, m_sub, y], kl_w, word_dropout)
-        cost_C = self.get_cost_C([x_all, embs_all, m_all, y])
+        cost_C, acc = self.get_cost_C([x_all, embs_all, m_all, y])
         # save internal results
         self.cost_l_L = cost_L
         self.cost_l_C = cost_C
-        return cost_L.mean() + self.beta * cost_C.mean()
+        return cost_L.mean() + self.beta * cost_C.mean(), acc.mean()
 
 
     def get_cost_for_unlabel(self, inputs, kl_w):
@@ -389,12 +397,14 @@ class SemiVAE(layers.MergeLayer):
         inputs_l_with_emb = [x_l_all, embs_l_all, m_l_all, x_l_sub, embs_l_sub, m_l_sub, y_l]
         inputs_u_with_emb = [x_u_all, embs_u_all, m_u_all, x_u_sub, embs_u_sub, m_u_sub]
 
-        cost_for_label = self.get_cost_for_label(inputs_l_with_emb, kl_w, word_dropout) * x_l_all.shape[0]
-        cost_for_unlabel = self.get_cost_for_unlabel(inputs_u_with_emb, kl_w) * x_u_all.shape[0]
-        cost_together = (cost_for_label + cost_for_unlabel) / (x_l_all.shape[0] + x_u_all.shape[0])
+        cost_l, acc = self.get_cost_for_label(inputs_l_with_emb, kl_w, word_dropout)
+        cost_u = self.get_cost_for_unlabel(inputs_u_with_emb, kl_w)
+        cost_l = cost_l * x_l_all.shape[0]
+        cost_u = cost_u * x_u_all.shape[0]
+        cost_together = (cost_l + cost_u) / (x_l_all.shape[0] + x_u_all.shape[0])
         cost_together += self.get_cost_prior() * self.decay_rate
 
-        return cost_together
+        return cost_together, acc
 
 
     def get_cost_test(self, inputs):
@@ -402,10 +412,10 @@ class SemiVAE(layers.MergeLayer):
         embs = self.embed_layer.get_output_for(x)
         classifier_enc = self.classifier_helper.get_output_for([embs, m], deterministic=True)
         prob_ys_given_x = self.classifier.get_output_for(classifier_enc)
-        #cost_test = objectives.categorical_crossentropy(prob_ys_given_x, y)
-        cost_acc = T.eq(T.argmax(prob_ys_given_x, axis=1), T.argmax(y, axis=1))
+        #cost = objectives.categorical_crossentropy(prob_ys_given_x, y)
+        acc = T.eq(T.argmax(prob_ys_given_x, axis=1), T.argmax(y, axis=1))
 
-        return cost_acc.mean()
+        return acc.mean()
 
 
     def get_cost_prior(self):
