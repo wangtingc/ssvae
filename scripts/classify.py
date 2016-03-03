@@ -26,15 +26,15 @@ def init_configurations():
     params['num_classes'] = 2
     params['dim_z'] = 128
     params['num_units_hidden_common'] = 500
-    params['num_samples_label'] = 5000 # the first n samples in trainset.
+    params['num_samples_label'] = 15000 # the first n samples in trainset.
     params['epoch'] = 200
     params['valid_period'] = 1 # temporary exclude validset
     params['test_period'] = 1
     params['alpha'] = 0.1
     params['learning_rate'] = 0.0001
     params['num_words'] = 20000
-    params['dropout'] = 0.0 # set 0 to no use
-    params['exp_name'] = 'clf_20k_dropout_5k'
+    params['dropout'] = 0.2 # set 0 to no use
+    params['exp_name'] = 'clf_20k_nodropout_15k'
     return params
 
 

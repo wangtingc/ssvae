@@ -32,7 +32,7 @@ def init_configurations():
     params['dim_z'] = 50
     params['num_units_hidden_common'] = 100
     params['num_units_hidden_rnn'] = 512
-    params['num_samples_train'] = 10000 # the first n samples in trainset.
+    params['num_samples_train'] = 5000 # the first n samples in trainset.
     params['epoch'] = 200
     params['valid_period'] = 10 # temporary exclude validset
     params['test_period'] = 10
@@ -40,10 +40,11 @@ def init_configurations():
     params['learning_rate'] = 0.0001
     params['num_words'] = 20000
     params['weight_decay_rate'] = 2e-6
-    params['annealing_center'] = 20
-    params['annealing_width'] = 2
+    params['annealing_center'] = 90
+    params['annealing_width'] = 10
     params['exp_time'] = datetime.now().strftime('%m%d%H%M')
-    params['save_weights_path'] = '../results/semi_vae_' + params['exp_time'] + '.pkl'
+    params['save_directory'] = '../results/semi_vae_' + params['exp_time']
+    params['save_weights_path'] = params['save_directory'] + '/weights.pkl'
     params['load_weights_path'] = None
     params['num_seqs'] = None
     params['len_seqs'] = 200
@@ -193,8 +194,8 @@ def build_model(params, w_emb):
     embs_l_sub = semi_vae.embed_layer.get_output_for(x_l_sub)
     cost_l = semi_vae.get_cost_L([x_l_sub, embs_l_sub, m_l_sub, y_l], kl_w, 0)
 
-    cost = semi_vae.get_cost_together(inputs_l, inputs_u, kl_w, params['word_dropout'])
-    acc = semi_vae.get_cost_test([x_l_all, m_l_all, y_l])
+    cost, train_acc = semi_vae.get_cost_together(inputs_l, inputs_u, kl_w, params['word_dropout'])
+    test_acc = semi_vae.get_cost_test([x_l_all, m_l_all, y_l])
 
     network_params = semi_vae.get_params()
     if params['load_weights_path']:
@@ -209,8 +210,8 @@ def build_model(params, w_emb):
     #f_train =theano.function([x, m], pred)
     print inputs_l + inputs_u
     f_debug = theano.function([x_l_sub, m_l_sub, y_l, kl_w], cost_l)
-    f_train = theano.function(inputs_l + inputs_u + [kl_w], cost, updates = params_update)
-    f_test = theano.function([x_l_all, m_l_all, y_l], acc)
+    f_train = theano.function(inputs_l + inputs_u + [kl_w], [cost, train_acc], updates = params_update)
+    f_test = theano.function([x_l_all, m_l_all, y_l], test_acc)
 
     return semi_vae, f_debug, f_train, f_test
 
@@ -244,6 +245,7 @@ def train(params):
     iter_test = BatchIterator(params['num_samples_test'], params['batch_size'], data = test, testing = testing)
 
     train_epoch_costs = []
+    train_epoch_diffs = []
     train_epoch_accs = []
     train_epoch_ppls = []
     dev_epoch_accs = []
@@ -255,9 +257,10 @@ def train(params):
         print('Epoch:', epoch)
 
         train_costs = []
+        train_diffs = []
         time_costs = []
-        train_accs = []
         train_ppls = []
+        train_accs = []
         #debug
         #num_batches_train = 1
         #num_batches_dev = 1
@@ -284,26 +287,28 @@ def train(params):
 
             #print x_l_all.shape, x_u_all.shape
             #print x_l_sub.shape, x_u_sub.shape
-            train_cost = f_train(*(inputs_l + inputs_u + [kl_w]))
-            #train_acc = f_test(x_l_all, m_l_all, y_l)
+            train_cost, train_acc = f_train(*(inputs_l + inputs_u + [kl_w]))
             y_l = np.asarray(y_l, dtype=theano.config.floatX)
             cost_l_rig = f_debug(x_l_sub, m_l_sub, y_l, 0)
             cost_l_wro = f_debug(x_l_sub, m_l_sub, 1-y_l, 0)
             #print time.time() - time_s
-            train_acc = (cost_l_rig > cost_l_wro).mean()
+            train_diff = (cost_l_rig > cost_l_wro).mean()
             train_ppl = np.exp(cost_l_rig.sum() / m_l_sub.sum())
             train_costs.append(train_cost)
-            train_accs.append(train_acc)
+            train_diffs.append(train_diff)
             train_ppls.append(train_ppl)
+            train_accs.append(train_acc)
             time_costs.append(time.time() - time_s)
 
         train_epoch_costs.append(np.mean(train_costs))
-        train_epoch_accs.append(np.mean(train_accs))
+        train_epoch_diffs.append(np.mean(train_diffs))
         train_epoch_ppls.append(np.mean(train_ppls))
+        train_epoch_accs.append(np.mean(train_accs))
         print('train_cost.mean()', np.mean(train_costs))
-        print('train_acc.mean()', np.mean(train_accs))
+        print('train_diff.mean()', np.mean(train_diffs))
         print('train_ppl.mean()', np.mean(train_ppls))
         print('time_cost.mean()', np.mean(time_costs))
+        print('train_acc.mean()', np.mean(train_accs))
 
         dev_accs = []
         dev_ppls = []
@@ -331,8 +336,19 @@ def train(params):
 
         test_epoch_accs.append(np.mean(test_accs))
         print('test_accuracy.mean()', np.mean(test_accs))
+        print('')
 
-        #save the curve
+        # mkdir
+        if not os.path.exists(params['save_directory']):
+            os.mkdir(params['save_directory'])
+
+        # save configurations
+        config_file_path = params['save_directory'] + os.sep + 'config.log'
+        with open(config_file_path, 'w') as f:
+            for k in params.keys():
+                f.write(k + ': ' + str(params[k]) + '\n')
+
+        # save the curve
         curve_fig = plt.figure()
         plt.plot(train_epoch_accs, 'r--', label='train')
         plt.plot(dev_epoch_accs, 'bs', label='dev')
@@ -340,7 +356,19 @@ def train(params):
         plt.legend()
         curve_fig.savefig(os.path.join('../results', params['exp_name'] + '.png'))
 
-        #save the weight
+        # save the results
+        results = {}
+        results['train_costs'] = train_costs
+        results['train_diffs'] = train_diffs
+        results['train_accs'] = train_accs
+        results['train_ppls'] = train_ppls
+        results['dev_accs'] = dev_accs
+        results['dev_ppls'] = dev_ppls
+        results['test_accs'] = test_accs
+        results_file_path = params['save_directory'] + os.sep + 'results.pkl'
+        pkl.dump(results, open(results_file_path, 'wb'))
+
+        # save the weight
         if params['save_weights_path']:
             network_params = semi_vae.get_params()
             save_weights(network_params, params['save_weights_path'])
