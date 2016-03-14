@@ -1,3 +1,6 @@
+import sys
+sys.path.append('../')
+
 import matplotlib
 matplotlib.use('Agg') # not to use X-desktop
 import matplotlib.pyplot as plt
@@ -11,19 +14,19 @@ import lasagne.objectives as objectives
 import lasagne.updates  as updates
 import gzip
 import cPickle as pkl
-from batchiterator import BatchIterator
-from semi_vae import SemiVAE
-from misc import *
 from datetime import datetime
 import os
 
+from utils.batchiterator import BatchIterator
+from utils.misc import *
+from models.semi_vae import SemiVAE
 
 def init_configurations():
     params = {}
     params['exp_name'] = 'semi_20k_sc_0.2_5k'
     params['data'] = 'imdb'
-    params['data_path'] = '../data/proc/imdb_u.pkl.gz' # to be tested
-    params['dict_path'] = '../data/proc/imdb_u.dict.pkl.gz'
+    params['data_path'] = '../../data/proc/imdb/imdb_u.pkl.gz' # to be tested
+    params['dict_path'] = '../../data/proc/imdb/imdb_u.dict.pkl.gz'
     #params['emb_path'] = '../data/proc/imdb_emb_u.pkl.gz'
     params['emb_path'] = None
     params['num_batches_train'] = 1250
@@ -43,7 +46,7 @@ def init_configurations():
     params['annealing_center'] = 90
     params['annealing_width'] = 10
     params['exp_time'] = datetime.now().strftime('%m%d%H%M')
-    params['save_directory'] = '../results/semi_vae_' + params['exp_time']
+    params['save_directory'] = '../../results/semi_vae_' + params['exp_time']
     params['save_weights_path'] = params['save_directory'] + '/weights.pkl'
     params['load_weights_path'] = None
     params['num_seqs'] = None
@@ -158,22 +161,19 @@ def load_data(params):
 
 
 def build_model(params, w_emb):
-    l_x = layers.InputLayer((None, None))
-    l_m = layers.InputLayer((None, None))
-    l_y = layers.InputLayer((None, params['num_classes']))
-
     #debug
     #params['num_samples_train'] = 22500
     beta = params['alpha'] * (params['num_samples_train'] + params['num_samples_unlabel']) / params['num_samples_train']
     print('beta', beta)
-    semi_vae = SemiVAE([l_x, l_m, l_y],
-                       w_emb,
+    semi_vae = SemiVAE(w_emb,
+                       params['num_classes'],
                        params['num_units_hidden_common'],
                        params['dim_z'],
                        beta,
                        params['num_units_hidden_rnn'],
                        params['weight_decay_rate'],
                        params['dropout'],
+                       params['word_dropout'],
                        )
 
     x_l_all = T.imatrix()
@@ -192,14 +192,14 @@ def build_model(params, w_emb):
 
     # debug
     embs_l_sub = semi_vae.embed_layer.get_output_for(x_l_sub)
-    cost_l = semi_vae.get_cost_L([x_l_sub, embs_l_sub, m_l_sub, y_l], kl_w, 0)
+    cost_l = semi_vae.get_cost_L([x_l_sub, embs_l_sub, m_l_sub, y_l], kl_w)
 
-    cost, train_acc = semi_vae.get_cost_together(inputs_l, inputs_u, kl_w, params['word_dropout'])
+    cost, train_acc = semi_vae.get_cost_together(inputs_l, inputs_u, kl_w)
     test_acc = semi_vae.get_cost_test([x_l_all, m_l_all, y_l])
 
-    network_params = semi_vae.get_params()
+    network_params = semi_vae.get_params(only_trainable = True)
     if params['load_weights_path']:
-        load_weights(network_params, params['load_weights_path'])
+        load_weights(semi_vae.get_params(), params['load_weights_path'])
 
 
     for param in network_params:
@@ -353,7 +353,7 @@ def train(params):
         plt.plot(dev_epoch_accs, 'bs', label='dev')
         plt.plot(test_epoch_accs, 'g^', label='test')
         plt.legend()
-        curve_fig.savefig(os.path.join('../results', params['exp_name'] + '.png'))
+        curve_fig.savefig(os.path.join(params['save_directory'], params['exp_name'] + '.png'))
 
         # save the results
         results = {}

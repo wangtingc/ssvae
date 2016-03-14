@@ -1,3 +1,4 @@
+# this script is used to test the classifier in semi-vae
 from lasagne import layers
 import semi_vae
 import cPickle as pkl
