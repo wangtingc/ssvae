@@ -7,7 +7,8 @@ import matplotlib.mlab as mlab
 def binarize_labels(labels, num_classes):
     labels_oh = np.zeros([labels.shape[0], num_classes], dtype=theano.config.floatX)
     for i in xrange(labels.shape[0]):
-        labels_oh[i, labels[i]] = 1
+        if labels[i] >= 0:
+            labels_oh[i, labels[i]] = 1
     return labels_oh
 
 
@@ -103,11 +104,10 @@ def prepare_data(x, n_seq = None, l_seq = None):
     if (n_seq or l_seq) and max_len > 200:
         xx = xx[:, :300]
         m = m[:, :300]
-    '''
+
     if not(n_seq or l_seq) and max_len > 1000:
         xx = xx[:, :1000]
         m = m[:, :1000]
-    '''
 
     return xx, m
 

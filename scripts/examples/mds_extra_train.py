@@ -1,3 +1,4 @@
+# this script is for mds dataset with domain label considered.
 import sys
 sys.path.append('../')
 
@@ -22,22 +23,21 @@ from utils.misc import *
 from utils.load_data import *
 from models.semi_vae import SemiVAE
 
-
 def init_configurations():
     params = {}
     params['exp_name'] = 'semi_20k_sc_0.2_5k'
-    params['data'] = 'imdb'
-    params['data_path'] = '../../data/proc/imdb/imdb_u.pkl.gz' # to be tested
-    params['dict_path'] = '../../data/proc/imdb/imdb_u.dict.pkl.gz'
-    #params['emb_path'] = '../data/proc/imdb_emb_u.pkl.gz'
+    params['data'] = 'mds'
+    params['data_path'] = '../../data/proc/mds/mds.pkl.gz' # to be tested
+    params['dict_path'] = '../../data/proc/mds/mds.dict.pkl.gz'
+    #params['emb_path'] = '../data/proc/mds/mds.emb_u.pkl.gz'
     params['emb_path'] = None
-    params['num_batches_train'] = 1250
+    params['num_batches_train'] = 1000
     params['batch_size'] = 100 # for testing and dev
     params['num_classes'] = 2
     params['dim_z'] = 50
     params['num_units_hidden_common'] = 100
     params['num_units_hidden_rnn'] = 512
-    params['num_samples_train'] = 5000 # the first n samples in trainset.
+    params['num_samples_train'] = 5600 # the first n samples in trainset.
     params['epoch'] = 200
     params['valid_period'] = 10 # temporary exclude validset
     params['test_period'] = 10
@@ -115,7 +115,9 @@ def build_model(params, w_emb):
 
 
 def train(params):
-    train, dev, test, unlabel, wdict, w_emb = load_imdb(params)
+    train, dev, test, unlabel, wdict, w_emb = load_mds(params)
+    unlabel = [unlabel[0], unlabel[2]]
+
     #import numpy as np
     #w_emb = np.random.rand(200000, 100).astype('float32')
     semi_vae, f_debug, f_train, f_test = build_model(params, w_emb)
@@ -165,12 +167,12 @@ def train(params):
         #num_batches_test = 1
         for batch in xrange(num_batches_train):
             time_s = time.time()
-            x_l, y_l = iter_train.next()
+            x_l, y_l, d_l = iter_train.next()
             x_l_all, m_l_all = prepare_data(x_l)
             x_l_sub, m_l_sub = prepare_data(x_l, params['num_seqs'], params['len_seqs'])
             inputs_l = [x_l_all, m_l_all, x_l_sub, m_l_sub, y_l]
 
-            x_u = iter_unlabel.next()[0]
+            x_u, d_u = iter_unlabel.next()
             x_u_all, m_u_all = prepare_data(x_u)
             x_u_sub, m_u_sub = prepare_data(x_u, params['num_seqs'], params['len_seqs'])
             inputs_u = [x_u_all, m_u_all, x_u_sub, m_u_sub]
@@ -211,7 +213,7 @@ def train(params):
         dev_accs = []
         dev_ppls = []
         for batch in xrange(num_batches_dev):
-            x, y = iter_dev.next()
+            x, y, d = iter_dev.next()
             x_all, m_all = prepare_data(x)
             x_sub, m_sub = prepare_data(x, params['num_seqs'], params['len_seqs'])
             dev_acc = f_test(x_all, m_all, y)
@@ -227,7 +229,7 @@ def train(params):
 
         test_accs = []
         for batch in xrange(num_batches_test):
-            x, y = iter_test.next()
+            x, y, d = iter_test.next()
             x, m = prepare_data(x)
             test_acc = f_test(x, m, y)
             test_accs.append(test_acc)

@@ -572,3 +572,77 @@ class ScLSTMLayer(MergeLayer):
         return hid_out
 
 
+    def one_step(self, input_n, cell_previous, hid_previous, da_previous, *args):
+        # Stack input weight matrices into a (num_inputs, 4*num_units)
+        # matrix, which speeds up computation
+        W_in_stacked = T.concatenate(
+            [self.W_in_to_ingate, self.W_in_to_forgetgate,
+             self.W_in_to_cell, self.W_in_to_outgate], axis=1)
+
+        # Same for hidden weight matrices
+        W_hid_stacked = T.concatenate(
+            [self.W_hid_to_ingate, self.W_hid_to_forgetgate,
+             self.W_hid_to_cell, self.W_hid_to_outgate], axis=1)
+
+        # Stack biases into a (4*num_units) vector
+        b_stacked = T.concatenate(
+            [self.b_ingate, self.b_forgetgate,
+             self.b_cell, self.b_outgate], axis=0)
+
+        if self.precompute_input:
+            # Because the input is given for all time steps, we can
+            # precompute_input the inputs dot weight matrices before scanning.
+            # W_in_stacked is (n_features, 4*num_units). input is then
+            # (n_time_steps, n_batch, 4*num_units).
+            input_n = T.dot(input_n, W_in_stacked) + b_stacked
+
+        # At each call to scan, input_n will be (n_time_steps, 4*num_units).
+        # We define a slicing function that extract the input to each LSTM gate
+        def slice_w(x, n):
+            return x[:, n*self.num_units:(n+1)*self.num_units]
+
+        # Create single recurrent computation step function
+        # input_n is the n'th vector of the input
+        def step(input_n, cell_previous, hid_previous, da_previous, *args):
+            if not self.precompute_input:
+                input_n = T.dot(input_n, W_in_stacked) + b_stacked
+
+            # Calculate gates pre-activations and slice
+            gates = input_n + T.dot(hid_previous, W_hid_stacked)
+
+            # Clip gradients
+            if self.grad_clipping:
+                gates = theano.gradient.grad_clip(
+                    gates, -self.grad_clipping, self.grad_clipping)
+
+            # Extract the pre-activation gate values
+            ingate = slice_w(gates, 0)
+            forgetgate = slice_w(gates, 1)
+            cell_input = slice_w(gates, 2)
+            outgate = slice_w(gates, 3)
+
+            if self.peepholes:
+                # Compute peephole connections
+                ingate += cell_previous*self.W_cell_to_ingate
+                forgetgate += cell_previous*self.W_cell_to_forgetgate
+
+            # Apply nonlinearities
+            ingate = self.nonlinearity_ingate(ingate)
+            forgetgate = self.nonlinearity_forgetgate(forgetgate)
+            cell_input = self.nonlinearity_cell(cell_input)
+            da = da_previous # for this exp, da does not change.
+
+            # Compute new cell value
+            cell = forgetgate*cell_previous + ingate*cell_input
+            cell += T.tanh(T.dot(da, self.W_da_to_cell))
+
+            if self.peepholes:
+                outgate += cell*self.W_cell_to_outgate
+            outgate = self.nonlinearity_outgate(outgate)
+
+            # Compute new hidden unit activation
+            hid = outgate*self.nonlinearity(cell)
+            return [cell, hid, da]
+
+        return step(input_n, cell_previous, hid_previous, da_previous, *args)
+

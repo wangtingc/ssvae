@@ -22,22 +22,21 @@ from utils.misc import *
 from utils.load_data import *
 from models.semi_vae import SemiVAE
 
-
 def init_configurations():
     params = {}
-    params['exp_name'] = 'semi_20k_sc_0.2_5k'
-    params['data'] = 'imdb'
-    params['data_path'] = '../../data/proc/imdb/imdb_u.pkl.gz' # to be tested
-    params['dict_path'] = '../../data/proc/imdb/imdb_u.dict.pkl.gz'
+    params['exp_name'] = 'semi_mds_6k'
+    params['data'] = 'mds'
+    params['data_path'] = '../../data/proc/mds/mds.pkl.gz' # to be tested
+    params['dict_path'] = '../../data/proc/mds/mds.dict.pkl.gz'
     #params['emb_path'] = '../data/proc/imdb_emb_u.pkl.gz'
     params['emb_path'] = None
-    params['num_batches_train'] = 1250
+    params['num_batches_train'] = 1000
     params['batch_size'] = 100 # for testing and dev
     params['num_classes'] = 2
     params['dim_z'] = 50
     params['num_units_hidden_common'] = 100
     params['num_units_hidden_rnn'] = 512
-    params['num_samples_train'] = 5000 # the first n samples in trainset.
+    params['num_samples_train'] = 5600 # the first n samples in trainset.
     params['epoch'] = 200
     params['valid_period'] = 10 # temporary exclude validset
     params['test_period'] = 10
@@ -115,7 +114,14 @@ def build_model(params, w_emb):
 
 
 def train(params):
-    train, dev, test, unlabel, wdict, w_emb = load_imdb(params)
+    train, dev, test, unlabel, wdict, w_emb = load_mds(params)
+  
+    def rm_extra(data):
+        return [data[0], data[1]]
+    train = rm_extra(train)
+    dev = rm_extra(dev)
+    test = rm_extra(test)
+
     #import numpy as np
     #w_emb = np.random.rand(200000, 100).astype('float32')
     semi_vae, f_debug, f_train, f_test = build_model(params, w_emb)
@@ -166,6 +172,7 @@ def train(params):
         for batch in xrange(num_batches_train):
             time_s = time.time()
             x_l, y_l = iter_train.next()
+
             x_l_all, m_l_all = prepare_data(x_l)
             x_l_sub, m_l_sub = prepare_data(x_l, params['num_seqs'], params['len_seqs'])
             inputs_l = [x_l_all, m_l_all, x_l_sub, m_l_sub, y_l]
