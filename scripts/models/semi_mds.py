@@ -74,7 +74,7 @@ class SemiMDS():
 
 
     def build_model(self, w_emb):
-            
+
         self.x_layer = layers.InputLayer((None, None))
         self.m_layer = layers.InputLayer((None, None))
         self.d_layer = layers.InputLayer((None, self.num_domains))
@@ -86,7 +86,7 @@ class SemiMDS():
             self.dim_emb,
             W = w_emb,
             )
-        
+
         # ================ encoding ===================
         # here we can try LSTMlayer and return the last output
         # or use SentMeanEncoder (to be tested)
@@ -101,7 +101,7 @@ class SemiMDS():
             [self.sent_encoder, self.y_layer, self.d_layer],
             axis = 1,
             )
-        
+
         self.encoder = layers.DenseLayer(self.concat_xyd,
             num_units = self.num_units_hidden_common,
             nonlinearity = nonlinearities.softplus
@@ -121,13 +121,13 @@ class SemiMDS():
 
         # merge encoder_mu and encoder_log_var to get z.
         self.sampler = SamplerLayer([self.encoder_mu, self.encoder_log_var])
-    
+
 
         # ================== decoding ===============
         #self.concat_yz = layers.ConcatLayer([label_layer, self.sampler], axis=1)
         #self.init_w = theano.shared(np.random.rand(2, self.dim_emb))
-        self.concat_zd = layers.Concat(
-            [self.sampler, self.d_layers],
+        self.concat_zd = layers.ConcatLayer(
+            [self.sampler, self.d_layer],
             axis = 1,
             )
 
@@ -136,13 +136,13 @@ class SemiMDS():
             nonlinearity = nonlinearities.identity,
             b = init.Constant(0.0),
             )
-        
+
         self.decoder = ScLSTMLayer(self.embed_layer,
             num_units = self.num_units_hidden_rnn,
             hid_init = self.decoder_w,
             da_init = self.y_layer,
             mask_input = self.m_layer,
-            grad_clipping = 0, 
+            grad_clipping = 0,
             )
 
         self.decoder_shp = layers.ReshapeLayer(self.decoder, (-1, self.num_units_hidden_rnn))
@@ -152,7 +152,7 @@ class SemiMDS():
             num_units = self.num_words,
             nonlinearity = nonlinearities.softmax
             )
-        
+
 
         # ======================= classifier =====================
         self.classifier = layers.LSTMLayer(self.embed_layer,
@@ -165,7 +165,7 @@ class SemiMDS():
         self.classifier = layers.DropoutLayer(self.classifier,
             p = self.dropout,
             )
-            
+
         self.classifier = MeanLayer(self.classifier,
             mask_input = self.m_layer,
             )
@@ -193,22 +193,23 @@ class SemiMDS():
         #emb_shifted = T.set_subtensor(emb_shifted[:, 0, :], T.dot(y, self.init_w))
 
         # inputs must obey the order.
-        emb_enc, m_enc, y_enc, d_enc = inputs_enc
+        emb_enc, m_enc, d_enc, y_enc = inputs_enc
         #emb = self.embed_layer.get_output_for(x)
-        mu_z, log_var_z, z = layers.get_output([self.encoder_mu, 
+        mu_z, log_var_z, z = layers.get_output([self.encoder_mu,
             self.encoder_log_var,
             self.sampler],
-            {self.embed_layer: emb_enc, 
+            {self.embed_layer: emb_enc,
             self.m_layer: m_enc,
+            self.d_layer: d_enc,
             self.y_layer: y_enc,
             })
-        
-        emb_dec, m_dec, y_dec = inputs_dec
+
+        emb_dec, m_dec, d_dec, y_dec = inputs_dec
 
         def _word_dropout(emb):
             if self.word_dropout != 0.0:
-                m = self.mrg_srng.binomial(emb.shape[:2], 
-                                           p=1-self.word_dropout, 
+                m = self.mrg_srng.binomial(emb.shape[:2],
+                                           p=1-self.word_dropout,
                                            dtype=theano.config.floatX
                                            )
                 emb = emb * mask_decoder[:, :, None]
@@ -219,18 +220,20 @@ class SemiMDS():
 
         print self.sampler, z
         print self.m_layer, m_dec
+        print self.d_layer, d_dec
         print self.y_layer, y_dec
         print self.embed_layer, emb_dec
-        
-        pred_prob_x, = layers.get_output([self.decoder_x], 
+
+        pred_prob_x, = layers.get_output([self.decoder_x],
             {self.embed_layer: emb_dec,
             self.m_layer: m_dec,
+            self.d_layer: d_dec,
             self.y_layer: y_dec,
             self.sampler: z,
             })
 
         return mu_z, log_var_z, z, pred_prob_x
- 
+
 
     def get_cost_L(self, inputs, kl_w, deterministic = False):
         # inputs format should be decided here.
@@ -244,7 +247,7 @@ class SemiMDS():
         inputs_dec = [emb_inverse, m_inverse, d, y]
         print emb,emb_inverse
         mu_z, log_var_z, z, pred_prob_x = self.forward(inputs_enc, inputs_dec, deterministic)
-        print pred_prob
+        print pred_prob_x
 
         x_inverse = x[:, ::-1]
         x_inverse_shifted = T.zeros_like(x_inverse)
@@ -302,7 +305,7 @@ class SemiMDS():
 
     def get_cost_C(self, inputs):
         print('getting_cost_C')
-        x, emb, m, y = inputs
+        x, emb, m, d, y = inputs
         prob_ys_given_x, = layers.get_output([self.classifier],
                                             {self.embed_layer: emb,
                                             self.m_layer: m,
@@ -319,7 +322,7 @@ class SemiMDS():
     def get_cost_for_label(self, inputs, kl_w):
         x_all, emb_all, m_all, x_sub, emb_sub, m_sub, d, y = inputs
         cost_L = self.get_cost_L([x_sub, emb_sub, m_sub, d, y], kl_w, True)
-        cost_C, acc = self.get_cost_C([x_all, emb_all, m_all, y])
+        cost_C, acc = self.get_cost_C([x_all, emb_all, m_all, d, y])
         # save internal results
         self.cost_l_L = cost_L
         self.cost_l_C = cost_C
@@ -340,7 +343,7 @@ class SemiMDS():
         emb_l_sub = self.embed_layer.get_output_for(x_l_sub)
         emb_u_all = self.embed_layer.get_output_for(x_u_all)
         emb_u_sub = self.embed_layer.get_output_for(x_u_sub)
-        
+
         inputs_l_with_emb = [x_l_all, emb_l_all, m_l_all, x_l_sub, emb_l_sub, m_l_sub, d_l, y_l]
         inputs_u_with_emb = [x_u_all, emb_u_all, m_u_all, x_u_sub, emb_u_sub, m_u_sub, d_u]
 
@@ -355,7 +358,7 @@ class SemiMDS():
 
 
     def get_cost_test(self, inputs):
-        x, m, y = inputs
+        x, m, d, y = inputs
         emb = self.embed_layer.get_output_for(x)
         prob_ys_given_x, = layers.get_output([self.classifier],
                                             {self.embed_layer: emb,
