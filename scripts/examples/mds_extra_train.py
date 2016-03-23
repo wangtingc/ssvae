@@ -25,7 +25,7 @@ from models.semi_mds import SemiMDS
 
 def init_configurations():
     params = {}
-    params['exp_name'] = 'semimds_20k_sc_0.2_5k'
+    params['exp_name'] = 'mdsext_semi'
     params['data'] = 'mds'
     params['data_path'] = '../../data/proc/mds/mds.pkl.gz' # to be tested
     params['dict_path'] = '../../data/proc/mds/mds.dict.pkl.gz'
@@ -43,17 +43,17 @@ def init_configurations():
     params['valid_period'] = 10 # temporary exclude validset
     params['test_period'] = 10
     params['alpha'] = 0.2
-    params['learning_rate'] = 0.0001
+    params['learning_rate'] = 0.0004
     params['num_words'] = 20000
     params['weight_decay_rate'] = 2e-6
     params['annealing_center'] = 90
     params['annealing_width'] = 10
     params['exp_time'] = datetime.now().strftime('%m%d%H%M')
-    params['save_directory'] = '../../results/semi_mds_' + params['exp_time']
+    params['save_directory'] = '../../results/' + params['exp_name'] + '_'  + params['exp_time']
     params['save_weights_path'] = params['save_directory'] + '/weights.pkl'
     params['load_weights_path'] = None
     params['num_seqs'] = None
-    params['len_seqs'] = 200
+    params['len_seqs'] = 400
     params['word_dropout'] = 0.0
     params['dropout'] = 0.2
     return params
@@ -171,7 +171,7 @@ def train(params):
             time_s = time.time()
             x_l, y_l, d_l = iter_train.next()
             x_l_all, m_l_all = prepare_data(x_l)
-            x_l_sub, m_l_sub = prepare_data(x_l, params['num_seqs'], params['len_seqs'])
+            x_l_sub, m_l_sub = prepare_data(x_l, params['num_seqs'], 800)
             inputs_l = [x_l_all, m_l_all, x_l_sub, m_l_sub, d_l, y_l]
 
             x_u, d_u = iter_unlabel.next()
@@ -185,17 +185,19 @@ def train(params):
             kl_w = np.float32(1) if anneal_value > 7.0 else 1/(1 + np.exp(-anneal_value))
             kl_w = kl_w.astype(theano.config.floatX)
             # debug
-            kl_w = np.float32(0)
+            #kl_w = np.float32(0)
 
             #print x_l_all.shape, x_u_all.shape
             #print x_l_sub.shape, x_u_sub.shape
             train_cost, train_acc = f_train(*(inputs_l + inputs_u + [kl_w]))
             y_l = np.asarray(y_l, dtype=theano.config.floatX)
-            cost_l_rig = f_debug(x_l_sub, m_l_sub, d_l, y_l, 0)
-            cost_l_wro = f_debug(x_l_sub, m_l_sub, d_l, 1-y_l, 0)
+            #cost_l_rig = f_debug(x_l_sub, m_l_sub, d_l, y_l, 0)
+            #cost_l_wro = f_debug(x_l_sub, m_l_sub, d_l, 1-y_l, 0)
             #print time.time() - time_s
-            train_diff = (cost_l_rig > cost_l_wro).mean()
-            train_ppl = np.exp(cost_l_rig.sum() / m_l_sub.sum())
+            #train_diff = (cost_l_rig > cost_l_wro).mean()
+            #train_ppl = np.exp(cost_l_rig.sum() / m_l_sub.sum())
+            train_diff = 0
+            train_ppl = 0
             train_costs.append(train_cost)
             train_diffs.append(train_diff)
             train_ppls.append(train_ppl)
@@ -219,8 +221,9 @@ def train(params):
             x_all, m_all = prepare_data(x)
             x_sub, m_sub = prepare_data(x, params['num_seqs'], params['len_seqs'])
             dev_acc = f_test(x_all, m_all, d, y)
-            dev_l = f_debug(x_sub, m_sub, d, y, 0)
-            dev_ppl = np.exp(dev_l.sum() / m_sub.sum())
+            #dev_l = f_debug(x_sub, m_sub, d, y, 0)
+            #dev_ppl = np.exp(dev_l.sum() / m_sub.sum())
+            dev_ppl = 0
             dev_accs.append(dev_acc)
             dev_ppls.append(dev_ppl)
 
@@ -248,6 +251,9 @@ def train(params):
         with open(config_file_path, 'w') as f:
             for k in params.keys():
                 f.write(k + ': ' + str(params[k]) + '\n')
+        config_file_path = params['save_directory'] + os.sep + 'config.pkl'
+        with open(config_file_path, 'w') as f:
+            pkl.dump(params, f)
 
         # save the curve
         curve_fig = plt.figure()
