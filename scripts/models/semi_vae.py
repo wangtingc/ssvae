@@ -72,7 +72,7 @@ class SemiVAE():
 
 
     def build_model(self, w_emb):
-            
+
         self.x_layer = layers.InputLayer((None, None))
         self.m_layer = layers.InputLayer((None, None))
         self.y_layer = layers.InputLayer((None, self.num_classes))
@@ -83,7 +83,7 @@ class SemiVAE():
             self.dim_emb,
             W = w_emb,
             )
-        
+
         # ================ encoding ===================
         # here we can try LSTMlayer and return the last output
         # or use SentMeanEncoder (to be tested)
@@ -98,7 +98,7 @@ class SemiVAE():
             [self.sent_encoder, self.y_layer],
             axis = 1,
             )
-        
+
         self.encoder = layers.DenseLayer(self.concat_xy,
             num_units = self.num_units_hidden_common,
             nonlinearity = nonlinearities.softplus
@@ -118,7 +118,7 @@ class SemiVAE():
 
         # merge encoder_mu and encoder_log_var to get z.
         self.sampler = SamplerLayer([self.encoder_mu, self.encoder_log_var])
-    
+
 
         # ================== decoding ===============
         #self.concat_yz = layers.ConcatLayer([label_layer, self.sampler], axis=1)
@@ -128,13 +128,13 @@ class SemiVAE():
             nonlinearity = nonlinearities.identity,
             b = init.Constant(0.0),
             )
-        
+
         self.decoder = ScLSTMLayer(self.embed_layer,
             num_units = self.num_units_hidden_rnn,
             hid_init = self.decoder_w,
             da_init = self.y_layer,
             mask_input = self.m_layer,
-            grad_clipping = 0, 
+            grad_clipping = 0,
             )
 
         self.decoder_shp = layers.ReshapeLayer(self.decoder, (-1, self.num_units_hidden_rnn))
@@ -144,7 +144,7 @@ class SemiVAE():
             num_units = self.num_words,
             nonlinearity = nonlinearities.softmax
             )
-        
+
 
         # ======================= classifier =====================
         self.classifier = layers.LSTMLayer(self.embed_layer,
@@ -156,7 +156,7 @@ class SemiVAE():
         self.classifier = layers.DropoutLayer(self.classifier,
             p = self.dropout,
             )
-            
+
         self.classifier = MeanLayer(self.classifier,
             mask_input = self.m_layer,
             )
@@ -181,34 +181,34 @@ class SemiVAE():
         # inputs must obey the order.
         emb_enc, m_enc, y_enc = inputs_enc
         #emb = self.embed_layer.get_output_for(x)
-        mu_z, log_var_z, z = layers.get_output([self.encoder_mu, 
+        mu_z, log_var_z, z = layers.get_output([self.encoder_mu,
             self.encoder_log_var,
             self.sampler],
-            {self.embed_layer: emb_enc, 
+            {self.embed_layer: emb_enc,
             self.m_layer: m_enc,
             self.y_layer: y_enc,
             })
-        
+
         emb_dec, m_dec, y_dec = inputs_dec
 
         def _word_dropout(emb):
             if self.word_dropout != 0.0:
-                m = self.mrg_srng.binomial(emb.shape[:2], 
-                                           p=1-self.word_dropout, 
+                m = self.mrg_srng.binomial(emb.shape[:2],
+                                           p=1-self.word_dropout,
                                            dtype=theano.config.floatX
                                            )
                 emb = emb * mask_decoder[:, :, None]
             return emb
 
-        if deterministic:
+        if not deterministic:
             emb_dec = _word_dropout(emb_dec)
 
         print self.sampler, z
         print self.m_layer, m_dec
         print self.y_layer, y_dec
         print self.embed_layer, emb_dec
-        
-        pred_prob, = layers.get_output([self.decoder_x], 
+
+        pred_prob, = layers.get_output([self.decoder_x],
             {self.embed_layer: emb_dec,
             self.m_layer: m_dec,
             self.y_layer: y_dec,
@@ -216,7 +216,7 @@ class SemiVAE():
             })
 
         return mu_z, log_var_z, z, pred_prob
- 
+
 
     def get_cost_L(self, inputs, kl_w, deterministic = False):
         # inputs format should be decided here.
@@ -324,7 +324,7 @@ class SemiVAE():
         emb_l_sub = self.embed_layer.get_output_for(x_l_sub)
         emb_u_all = self.embed_layer.get_output_for(x_u_all)
         emb_u_sub = self.embed_layer.get_output_for(x_u_sub)
-        
+
         inputs_l_with_emb = [x_l_all, emb_l_all, m_l_all, x_l_sub, emb_l_sub, m_l_sub, y_l]
         inputs_u_with_emb = [x_u_all, emb_u_all, m_u_all, x_u_sub, emb_u_sub, m_u_sub]
 
@@ -345,7 +345,7 @@ class SemiVAE():
                                             {self.embed_layer: emb,
                                             self.m_layer: m
                                             },
-                                            deterministic = False,
+                                            deterministic = True,
                                             )
         #cost = objectives.categorical_crossentropy(prob_ys_given_x, y)
         acc = T.eq(T.argmax(prob_ys_given_x, axis=1), T.argmax(y, axis=1))
