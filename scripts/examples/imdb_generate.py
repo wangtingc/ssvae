@@ -57,8 +57,7 @@ def init_configurations():
     return params
 
 
-def load_configurations():
-    config_path = '../../results/semi_vae_03131640/config.log'
+def load_configurations(condig_path):
     params = {}
     with open(config_path, 'r') as f:
         for l in f:
@@ -206,10 +205,11 @@ def beam_search(y, z, beam_size, f_init, f_dec_step_init, f_dec_step, max_sent_l
     return sample, sample_score
 
 def show(sample,sample_score, idict):
-    for i in range(len(sample)):
+    #for i in range(len(sample)):
+    for i in range(5):
         print 'score:', sample_score[i]
         #print sample[i]
-        for j in sample[i]:
+        for j in sample[i][::-1]:
             print idict[j],
 
 
@@ -224,9 +224,16 @@ def decode(params):
     f_dec_step_init = get_f_dec_step(semi_vae, True, params)
     f_dec_step = get_f_dec_step(semi_vae, False, params)
     y = np.asarray([[0, 1]], dtype=theano.config.floatX)
-    z = np.zeros((1, int(params['dim_z'])), dtype=theano.config.floatX)
+    #z = np.zeros((1, int(params['dim_z'])), dtype=theano.config.floatX)
+    z = np.random.normal(0, 1, (1, int(params['dim_z']))).astype(theano.config.floatX)
+    print('z:', z)
     sample, sample_score = beam_search(y, z, 100, f_init, f_dec_step_init, f_dec_step, 100, params)
     show(sample, sample_score, idict)
 
-params = load_configurations()
+config_path = '../../results/imdb-sclstm-5000-87.8/config.log'
+params = load_configurations(config_path)
+params['data_path'] = '../../data/proc/imdb/imdb_u.pkl.gz' # to be tested
+params['dict_path'] = '../../data/proc/imdb/imdb_u.dict.pkl.gz'
+params['save_weights_path'] = '../../results/imdb-sclstm-5000-87.8/weights.pkl'
+#params['emb_path'] = '../data/proc/imdb_emb_u.pkl.gz'
 decode(params)

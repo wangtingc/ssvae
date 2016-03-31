@@ -41,7 +41,7 @@ def init_configurations():
     params['epoch'] = 200
     params['valid_period'] = 10 # temporary exclude validset
     params['test_period'] = 10
-    params['alpha'] = 0.2
+    params['alpha'] = 1
     params['learning_rate'] = 0.0004
     params['num_words'] = 20000
     params['weight_decay_rate'] = 2e-6
@@ -167,7 +167,7 @@ def train(params):
             time_s = time.time()
             x_l, y_l = iter_train.next()
             x_l_all, m_l_all = prepare_data(x_l)
-            x_l_sub, m_l_sub = prepare_data(x_l, params['num_seqs'], 800)
+            x_l_sub, m_l_sub = prepare_data(x_l, params['num_seqs'], 600)
             inputs_l = [x_l_all, m_l_all, x_l_sub, m_l_sub, y_l]
 
             x_u = iter_unlabel.next()[0]

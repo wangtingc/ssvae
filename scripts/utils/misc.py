@@ -72,12 +72,32 @@ def prepare_data(x, n_seq = None, l_seq = None):
                 s += j
             new_x.append(s)
         elif l_seq:
-            len_seq = len(i)
-            r = np.random.randint(0, len_seq)
+            num_sents = len(i)
+            max_sentidx = num_sents - 1
+            cnt_words = len(i[max_sentidx])
+
+            while(max_sentidx >= 0 and cnt_words < l_seq):
+                max_sentidx -= 1
+                cnt_words += len(i[max_sentidx])
+
+            max_sentidx += 1
+
+            # terminated when cnt_words > l_seq at the first time or index < 0
+            # when index < 0, index should reset to 0
+            if max_sentidx == len(i):
+                max_sentidx = len(i) - 1
+            
+            r = np.random.randint(0, max_sentidx + 1)
             s = i[r]
-            while r+1 < len(i) and len(s) + len(i[r+1]) < l_seq:
-                s = s + i[r+1]
+            r += 1
+            while r < len(i) and len(s) + len(i[r]) < l_seq:
+                s = s + i[r]
                 r += 1
+            
+            # if singe sentence is longer than 400 ( memory limitation), trunct
+            if len(s) > l_seq:
+                s = s[:l_seq]
+
             new_x.append(s)
         else:
             s = []

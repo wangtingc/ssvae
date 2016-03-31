@@ -1,3 +1,6 @@
+import sys
+sys.path.append('../')
+
 import matplotlib
 matplotlib.use('Agg') # not to use X-desktop
 import matplotlib.pyplot as plt
@@ -11,22 +14,22 @@ import lasagne.objectives as objectives
 import lasagne.updates  as updates
 import gzip
 import cPickle as pkl
-from batchiterator import BatchIterator
-from misc import *
+from utils.batchiterator import BatchIterator
+from utils.misc import *
 import os
 
 
 def init_configurations():
     params = {}
     params['data'] = 'imdb'
-    params['data_path'] = '../data/proc/imdb_u.pkl.gz' # to be tested
-    params['dict_path'] = '../data/proc/imdb_u.dict.pkl.gz'
-    params['emb_path'] = '../data/proc/imdb_emb_u.pkl.gz'
+    params['data_path'] = '../../data/proc/imdb/imdb_u.pkl.gz' # to be tested
+    params['dict_path'] = '../../data/proc/imdb/imdb_u.dict.pkl.gz'
+    params['emb_path'] = '../../data/proc/imdb/imdb_emb_u.pkl.gz'
     params['batch_size'] = 50
     params['num_classes'] = 2
     params['dim_z'] = 128
     params['num_units_hidden_common'] = 500
-    params['num_samples_label'] = 15000 # the first n samples in trainset.
+    params['num_samples_label'] = 2500 # the first n samples in trainset.
     params['epoch'] = 200
     params['valid_period'] = 1 # temporary exclude validset
     params['test_period'] = 1
@@ -34,7 +37,7 @@ def init_configurations():
     params['learning_rate'] = 0.0001
     params['num_words'] = 20000
     params['dropout'] = 0.2 # set 0 to no use
-    params['exp_name'] = 'clf_20k_nodropout_15k'
+    params['exp_name'] = 'clf_20k_nodropout_2.5k'
     return params
 
 
@@ -275,7 +278,7 @@ def train(params):
         plt.plot(dev_epoch_accs, 'bs', label='dev')
         plt.plot(test_epoch_accs, 'g^', label='test')
         plt.legend()
-        curve_fig.savefig(os.path.join('../results', params['exp_name'] + '.png'))
+        curve_fig.savefig(os.path.join('../../results', params['exp_name'] + '.png'))
 
 
 params = init_configurations()
