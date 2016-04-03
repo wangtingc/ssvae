@@ -54,6 +54,7 @@ def init_configurations():
     params['len_seqs'] = 200
     params['word_dropout'] = 0.0
     params['dropout'] = 0.2
+    params['domain'] = 1
     return params
 
 
@@ -113,6 +114,25 @@ def build_model(params, w_emb):
 
 def train(params):
     train, dev, test, unlabel, wdict, w_emb = load_mds(params)
+
+    def filt_domain(data):
+        idx, = np.where(np.asarray(data[2])[:, params['domain']] == 1)
+        x = [data[0][i] for i in idx]
+        y = [data[1][i] for i in idx]
+        d = [data[2][i] for i in idx]
+        return [x, y, d]
+
+    train = filt_domain(train)
+    dev = filt_domain(dev)
+    test = filt_domain(test)
+    unlabel = filt_domain(unlabel)
+
+    params['num_samples_train'] = len(train[0])
+    params['num_samples_dev'] = len(dev[0])
+    params['num_samples_test'] = len(test[0])
+    params['num_samples_unlabel'] = len(unlabel[0])
+
+
 
     def rm_extra(data):
         return [data[0], data[1]]

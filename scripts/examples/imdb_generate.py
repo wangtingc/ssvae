@@ -146,6 +146,7 @@ def beam_search(y, z, beam_size, f_init, f_dec_step_init, f_dec_step, max_sent_l
     x = -1 * np.ones((live_k,)).astype('int32')
 
     for ii in range(max_sent_length):
+        print(live_k, dead_k)
         da = np.tile(y, (cell_prev.shape[0], 1))
         #print x.shape
         #print da.shape
@@ -215,6 +216,11 @@ def show(sample,sample_score, idict):
 
 
 def decode(params):
+    z_path = 'forward_05k.pkl'
+    with open(z_path, 'rb') as f:
+        forward_data = pkl.load(f)
+        y = forward_data['y']
+        z = forward_data['z']
     wdict = load_dict(params)
     idict = dict([(v, k) for k, v in wdict.items()])
     idict[0] = '<EOS>'
@@ -223,12 +229,14 @@ def decode(params):
     f_init = get_f_init(semi_vae, params)
     f_dec_step_init = get_f_dec_step(semi_vae, True, params)
     f_dec_step = get_f_dec_step(semi_vae, False, params)
-    y = np.asarray([[0, 1]], dtype=theano.config.floatX)
+    #y = np.asarray([[0, 1]], dtype=theano.config.floatX)
     #z = np.zeros((1, int(params['dim_z'])), dtype=theano.config.floatX)
-    z = np.random.normal(0, 1, (1, int(params['dim_z']))).astype(theano.config.floatX)
-    print('z:', z)
-    sample, sample_score = beam_search(y, z, 100, f_init, f_dec_step_init, f_dec_step, 100, params)
+    #z = np.random.normal(0, 1, (1, int(params['dim_z']))).astype(theano.config.floatX)
+    print y[200: 201]
+    y = np.asarray(y[200: 201], dtype=theano.config.floatX)
+    sample, sample_score = beam_search(y, z[200:201], 100, f_init, f_dec_step_init, f_dec_step, 100, params)
     show(sample, sample_score, idict)
+
 
 config_path = '../../results/imdb-sclstm-5000-87.8/config.log'
 params = load_configurations(config_path)
