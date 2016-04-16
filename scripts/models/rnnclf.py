@@ -28,11 +28,12 @@ class RnnClf:
         self.lr = lr
 
         if w_emb is None:
-            w_emb = init.GlorotNormal()
+            w_emb = init.Normal()
     
         self.l_x = layers.InputLayer((None, None))
         self.l_m = layers.InputLayer((None, None))
         self.l_emb = layers.EmbeddingLayer(self.l_x, n_words, dim_emb, W=w_emb)
+        self.l_ebd = self.l_emb
 
         if dropout:
             self.l_emb = layers.dropout(self.l_emb, dropout)
@@ -50,17 +51,21 @@ class RnnClf:
 
         self.l_y = layers.DenseLayer(self.l_enc, n_classes, nonlinearity=nonlinearities.softmax)
 
+        if pretrain:
+            self.load_pretrain(pretrain)
+
 
     def load_pretrain(self, pretrain_path):
         import cPickle as pkl
+        print('loading pretraining data')
         with open(pretrain_path, 'rb') as f:
             load_wemb = pkl.load(f)
-            wemb = self.l_emb.get_params()
+            wemb = self.l_ebd.get_params()
             for i in range(len(load_wemb)):
                 wemb[i].set_value(load_wemb[i])
 
             load_lstm = pkl.load(f)
-            lstm = self.l_rnn.get_parms()
+            lstm = self.l_rnn.get_params()
             for i in range(len(load_lstm)):
                 lstm[i].set_value(load_lstm[i])
             
@@ -86,7 +91,10 @@ class RnnClf:
 
         cost = objectives.categorical_crossentropy(pred, y).mean()
         acc = T.eq(T.argmax(pred, axis=1), T.argmax(y, axis=1)).mean()
-        params_update = updates.adam(cost, network_params, self.lr)
+        grads = theano.grad(cost, network_params)
+        grads = total_norm_constraint(grads, max_norm=20)
+        grads = [T.clip(g, -10, 10) for g in grads]
+        params_update = updates.adam(grads, network_params, self.lr)
         f_train = theano.function([x, m, y], [cost, acc], updates = params_update)
         return f_train
 

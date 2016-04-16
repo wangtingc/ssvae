@@ -30,7 +30,7 @@ def init_configurations():
     params['data_path'] = '../../data/proc/imdb/imdb_u.pkl.gz' # to be tested
     params['dict_path'] = '../../data/proc/imdb/imdb_u.dict.pkl.gz'
     params['emb_path'] = '../../data/proc/imdb/imdb_emb_u.pkl.gz'
-    params['batch_size'] = 50
+    params['batch_size'] = 100
     params['num_classes'] = 2
     params['dim_emb'] = 300
     params['num_units'] = 512
@@ -38,7 +38,6 @@ def init_configurations():
     params['epoch'] = 200
     params['dev_period'] = 5 # temporary exclude validset
     params['test_period'] = 5
-    params['alpha'] = 0.1
     params['lr'] = 0.0004
     params['num_words'] = 20000
     params['dropout'] = 0.2 # set 0 to no use
