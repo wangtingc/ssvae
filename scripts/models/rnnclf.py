@@ -39,15 +39,17 @@ class RnnClf:
             self.l_emb = layers.dropout(self.l_emb, dropout)
         
         if use_final:
-            self.l_enc = layers.LSTMLayer(self.l_emb, num_units, mask_input = self.l_m, only_return_final=True)
+            self.l_enc = layers.LSTMLayer(self.l_emb, num_units, mask_input = self.l_m, \
+                                          only_return_final=True, grad_clipping=10, gradient_steps=400)
             self.l_rnn = self.l_enc
         else:
-            self.l_enc = layers.LSTMLayer(self.l_emb, num_units, mask_input = self.l_m, only_return_final=False)
+            self.l_enc = layers.LSTMLayer(self.l_emb, num_units, mask_input = self.l_m, \
+                                          only_return_final=False, grad_clipping=10, gradient_steps=400) 
             self.l_rnn = self.l_enc
             self.l_enc = MeanLayer(self.l_enc, self.l_m)
 
-        if dropout:
-            self.l_enc = layers.dropout(self.l_enc, dropout)
+        #if dropout:
+            #self.l_enc = layers.dropout(self.l_enc, dropout)
 
         self.l_y = layers.DenseLayer(self.l_enc, n_classes, nonlinearity=nonlinearities.softmax)
 
@@ -92,8 +94,8 @@ class RnnClf:
         cost = objectives.categorical_crossentropy(pred, y).mean()
         acc = T.eq(T.argmax(pred, axis=1), T.argmax(y, axis=1)).mean()
         grads = theano.grad(cost, network_params)
-        grads = total_norm_constraint(grads, max_norm=20)
         grads = [T.clip(g, -10, 10) for g in grads]
+        grads = updates.total_norm_constraint(grads, max_norm=20)
         params_update = updates.adam(grads, network_params, self.lr)
         f_train = theano.function([x, m, y], [cost, acc], updates = params_update)
         return f_train

@@ -34,13 +34,13 @@ def init_configurations():
     params['num_classes'] = 2
     params['dim_emb'] = 300
     params['num_units'] = 512
-    params['num_samples_train'] = 2500 # the first n samples in trainset.
+    params['num_samples_train'] = 20000 # the first n samples in trainset.
     params['epoch'] = 200
     params['dev_period'] = 5 # temporary exclude validset
     params['test_period'] = 5
-    params['lr'] = 0.0004
+    params['lr'] = 0.0002
     params['num_words'] = 20000
-    params['dropout'] = 0.2 # set 0 to no use
+    params['dropout'] = 0.5 # set 0 to no use
     params['exp_time'] = datetime.now().strftime('%m%d%H%M')
     params['save_directory'] = '../../results/' + params['exp_name'] + '_' + params['exp_time']
     params['save_weights_path'] = params['save_directory'] + '/weights.pkl'
@@ -75,8 +75,8 @@ def train(params):
     train, dev, test, unlabel, wdict, w_emb = load_imdb(params)
 
     iter_train = BatchIterator(params['num_samples_train'], params['batch_size'], data = train, testing = False)
-    iter_dev = BatchIterator(params['num_samples_dev'], params['batch_size'], data = dev, testing = False)
-    iter_test = BatchIterator(params['num_samples_test'], params['batch_size'], data = test, testing = False)
+    iter_dev = BatchIterator(params['num_samples_dev'], params['batch_size'], data = dev, testing = True)
+    iter_test = BatchIterator(params['num_samples_test'], params['batch_size'], data = test, testing = True)
 
     train_epoch_costs = []
     train_epoch_accs = []
