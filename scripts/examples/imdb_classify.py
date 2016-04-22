@@ -42,8 +42,8 @@ def init_configurations():
     params['num_words'] = 20000
     params['dropout'] = 0.5 # set 0 to no use
     params['exp_time'] = datetime.now().strftime('%m%d%H%M')
-    params['save_directory'] = '../../results/' + params['exp_name'] + '_' + params['exp_time']
-    params['save_weights_path'] = params['save_directory'] + '/weights.pkl'
+    params['save_dir'] = '../../results/' + params['exp_name'] + '_' + params['exp_time']
+    params['save_weights_path'] = params['save_dir'] + '/weights.pkl'
 
     params['pretrain_load_path'] = '../../data/proc/imdb/pretrain_lm.pkl'
     params['use_final'] = True
@@ -78,19 +78,34 @@ def train(params):
     iter_dev = BatchIterator(params['num_samples_dev'], params['batch_size'], data = dev, testing = True)
     iter_test = BatchIterator(params['num_samples_test'], params['batch_size'], data = test, testing = True)
 
+    n_batches_train = params['num_samples_train'] / params['batch_size']
+    n_batches_dev = params['num_samples_dev'] / params['batch_size']
+    n_batches_test = params['num_samples_test'] / params['batch_size']
+    #n_batches_train = 1
+    #n_batches_dev = 1
+    #n_batches_test = 1
+
+    # print the results
+    if not os.path.exists(params['save_dir']):
+        os.makedirs(params['save_dir'])
+        of = open(params['save_dir'] + os.sep + 'log.txt', 'w')
+        of.write(configuration2str(params))
+        pkl.dump(params, open(params['save_dir'] + '/config.pkl', 'wb'))
+        df = open(params['save_dir'] + os.sep + 'details.txt', 'w')
+    else:
+        raise 'the directory exists: %s' % params['save_dir']
+
+
     train_epoch_costs = []
     train_epoch_accs = []
     dev_epoch_accs = []
     test_epoch_accs = []
     print(configuration2str(params))
     for epoch in xrange(params['epoch']):
+        epoch_info = '[*] epoch %d' % epoch
+        of.write(epoch_info + '\n')
+        df.write(epoch_info + '\n')
         print('Epoch:', epoch)
-        n_batches_train = params['num_samples_train'] / params['batch_size']
-        n_batches_dev = params['num_samples_dev'] / params['batch_size']
-        n_batches_test = params['num_samples_test'] / params['batch_size']
-        #n_batches_train = 1
-        #n_batches_dev = 1
-        #n_batches_test = 1
 
         train_costs = []
         time_costs = []
@@ -103,6 +118,7 @@ def train(params):
             train_costs.append(train_cost)
             train_accs.append(train_acc)
             time_costs.append(time.time() - time_s)
+            df.write('\t[-] train: batch %d, cost %4f, acc %2f\n' % (batch, train_cost, train_acc))
 
         train_epoch_costs.append(np.mean(train_costs))
         train_epoch_accs.append(np.mean(train_accs))
@@ -117,6 +133,7 @@ def train(params):
                 x, m = prepare_data(x)
                 dev_acc = f_test(x, m, y)
                 dev_accs.append(dev_acc)
+                df.write('\t[-] valid: batch %d, acc %2f\n' % (batch, dev_cost, dev_acc))
 
         dev_epoch_accs.append(np.mean(dev_accs))
         print('dev_accuracy.mean()', np.mean(dev_accs))
@@ -128,13 +145,14 @@ def train(params):
                 x, m = prepare_data(x)
                 test_acc = f_test(x, m, y)
                 test_accs.append(test_acc)
+                df.write('\t[-] test: batch %d, acc %2f\n' % (batch, test_acc))
 
         test_epoch_accs.append(np.mean(test_accs))
         print('test_accuracy.mean()', np.mean(test_accs))
 
         # mkdir
-        if not os.path.exists(params['save_directory']):
-            os.mkdir(params['save_directory'])
+        if not os.path.exists(params['save_dir']):
+            os.mkdir(params['save_dir'])
 
         #save the curve
         curve_fig = plt.figure()
@@ -142,14 +160,14 @@ def train(params):
         plt.plot(dev_epoch_accs, 'bs', label='dev')
         plt.plot(test_epoch_accs, 'g^', label='test')
         plt.legend()
-        curve_fig.savefig(os.path.join(params['save_directory'], params['exp_name'] + '.png'))
+        curve_fig.savefig(os.path.join(params['save_dir'], params['exp_name'] + '.png'))
 
         # save configurations
-        config_file_path = params['save_directory'] + os.sep + 'config.log'
+        config_file_path = params['save_dir'] + os.sep + 'config.log'
         with open(config_file_path, 'w') as f:
             for k in params.keys():
                 f.write(k + ': ' + str(params[k]) + '\n')
-        config_file_path = params['save_directory'] + os.sep + 'config.pkl'
+        config_file_path = params['save_dir'] + os.sep + 'config.pkl'
         with open(config_file_path, 'w') as f:
             pkl.dump(params, f)        # save the results
 
@@ -158,7 +176,7 @@ def train(params):
         results['train_accs'] = train_epoch_accs
         results['dev_accs'] = dev_epoch_accs
         results['test_accs'] = test_epoch_accs
-        results_file_path = params['save_directory'] + os.sep + 'results.pkl'
+        results_file_path = params['save_dir'] + os.sep + 'results.pkl'
         pkl.dump(results, open(results_file_path, 'wb'))
 
         # save the weight
