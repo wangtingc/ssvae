@@ -268,7 +268,7 @@ class ScLSTMLayer(MergeLayer):
         (self.W_in_to_ingate, self.W_hid_to_ingate, self.W_da_to_ingate, self.b_ingate,
          self.nonlinearity_ingate) = add_gate_params(ingate, 'ingate')
 
-        (self.W_in_to_forgetgate, self.W_hid_to_forgetgate, self.b_forgetgate,
+        (self.W_in_to_forgetgate, self.W_hid_to_forgetgate, self.W_da_to_forgetgate, self.b_forgetgate,
          self.nonlinearity_forgetgate) = add_gate_params(forgetgate,
                                                          'forgetgate')
 

@@ -42,7 +42,7 @@ def init_configurations():
     params['valid_period'] = 10 # temporary exclude validset
     params['test_period'] = 10
     params['alpha'] = 1
-    params['learning_rate'] = 0.0004
+    params['learning_rate'] = 0.001
     params['num_words'] = 20000
     params['weight_decay_rate'] = 2e-6
     params['annealing_center'] = 90

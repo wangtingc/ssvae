@@ -40,18 +40,18 @@ class RnnClf:
         
         if use_final:
             self.l_enc = layers.LSTMLayer(self.l_emb, num_units, mask_input = self.l_m, \
-                                          only_return_final=True, grad_clipping=10, gradient_steps=400)
+                                          only_return_final=True, grad_clipping=10)
             self.l_rnn = self.l_enc
         else:
             self.l_enc = layers.LSTMLayer(self.l_emb, num_units, mask_input = self.l_m, \
-                                          only_return_final=False, grad_clipping=10, gradient_steps=400) 
+                                          only_return_final=False, grad_clipping=10) 
             self.l_rnn = self.l_enc
             self.l_enc = MeanLayer(self.l_enc, self.l_m)
+        
+        self.l_y = layers.DenseLayer(self.l_enc, 30, nonlinearity=nonlinearities.rectify)
+        self.l_y = layers.dropout(self.l_y)
 
-        #if dropout:
-            #self.l_enc = layers.dropout(self.l_enc, dropout)
-
-        self.l_y = layers.DenseLayer(self.l_enc, n_classes, nonlinearity=nonlinearities.softmax)
+        self.l_y = layers.DenseLayer(self.l_y, n_classes, nonlinearity=nonlinearities.softmax)
 
         if pretrain:
             self.load_pretrain(pretrain)
