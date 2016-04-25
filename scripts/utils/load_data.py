@@ -75,7 +75,7 @@ def load_imdb(params):
         print('loading word embedding from', params['emb_path'])
         with gzip.open(params['emb_path']) as f:
             w_emb = pkl.load(f).astype(theano.config.floatX)
-            params['dim_emb'] = w_emb.shape[1]
+            assert params['dim_emb'] == w_emb.shape[1]
             # use full dictionary if num_words is not set
             if params['num_words'] is None:
                 params['num_words'] = w_emb.shape[0]
@@ -88,7 +88,6 @@ def load_imdb(params):
             for i in wdict.values():
                 max_idx = i if max_idx < i else max_idx
             params['num_words'] = max_idx + 1
-        params['dim_emb'] = 200 # set manually
         w_emb = np.random.rand(params['num_words'], params['dim_emb'])
         w_emb = w_emb.astype(theano.config.floatX)
 

@@ -31,6 +31,7 @@ def init_configurations():
     params['dict_path'] = '../../data/proc/imdb/imdb_u.dict.pkl.gz'
     #params['emb_path'] = '../data/proc/imdb_emb_u.pkl.gz'
     params['emb_path'] = None
+    params['dim_emb'] = 300
     params['num_batches_train'] = 1250
     params['batch_size'] = 100 # for testing and dev
     params['num_classes'] = 2
@@ -258,6 +259,7 @@ def train(params):
         plt.plot(test_epoch_accs, 'g^', label='test')
         plt.legend()
         curve_fig.savefig(os.path.join(params['save_directory'], params['exp_name'] + '.png'))
+        plt.close()
 
         # save the results
         results = {}

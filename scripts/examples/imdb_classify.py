@@ -29,23 +29,24 @@ def init_configurations():
     params['data'] = 'imdb'
     params['data_path'] = '../../data/proc/imdb/imdb_u.pkl.gz' # to be tested
     params['dict_path'] = '../../data/proc/imdb/imdb_u.dict.pkl.gz'
-    params['emb_path'] = '../../data/proc/imdb/imdb_emb_u.pkl.gz'
-    params['batch_size'] = 25
+    #params['emb_path'] = '../../data/proc/imdb/imdb_emb_u.pkl.gz'
+    params['emb_path'] = None
+    params['batch_size'] = 100
     params['num_classes'] = 2
     params['dim_emb'] = 300
     params['num_units'] = 512
     params['num_samples_train'] = 20000 # the first n samples in trainset.
     params['epoch'] = 200
     params['dev_period'] = 1 # temporary exclude validset
-    params['test_period'] = 2
-    params['lr'] = 0.0004
+    params['test_period'] = 1
+    params['lr'] = 0.0002
     params['num_words'] = 20000
-    params['dropout'] = 0.80 # set 0 to no use
+    params['dropout'] = 0.25 # set 0 to no use
     params['exp_time'] = datetime.now().strftime('%m%d%H%M')
     params['save_dir'] = '../../results/' + params['exp_name'] + '_' + params['exp_time']
     params['save_weights_path'] = params['save_dir'] + '/weights.pkl'
 
-    params['pretrain_load_path'] = '../../data/proc/imdb/pretrain_lm2.pkl'
+    params['pretrain_load_path'] = '../../data/proc/imdb/pretrain_lm1.pkl'
     params['use_final'] = True
     return params
 
@@ -161,6 +162,7 @@ def train(params):
         plt.plot(test_epoch_accs, 'g^', label='test')
         plt.legend()
         curve_fig.savefig(os.path.join(params['save_dir'], params['exp_name'] + '.png'))
+        plt.close()
 
         # save configurations
         config_file_path = params['save_dir'] + os.sep + 'config.log'
