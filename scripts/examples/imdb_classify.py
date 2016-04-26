@@ -31,7 +31,7 @@ def init_configurations():
     params['dict_path'] = '../../data/proc/imdb/imdb_u.dict.pkl.gz'
     #params['emb_path'] = '../../data/proc/imdb/imdb_emb_u.pkl.gz'
     params['emb_path'] = None
-    params['batch_size'] = 100
+    params['batch_size'] = 25
     params['num_classes'] = 2
     params['dim_emb'] = 300
     params['num_units'] = 512
@@ -39,14 +39,14 @@ def init_configurations():
     params['epoch'] = 200
     params['dev_period'] = 1 # temporary exclude validset
     params['test_period'] = 1
-    params['lr'] = 0.0002
+    params['lr'] = 0.0004
     params['num_words'] = 20000
-    params['dropout'] = 0.25 # set 0 to no use
+    params['dropout'] = 0.8 # set 0 to no use
     params['exp_time'] = datetime.now().strftime('%m%d%H%M')
     params['save_dir'] = '../../results/' + params['exp_name'] + '_' + params['exp_time']
     params['save_weights_path'] = params['save_dir'] + '/weights.pkl'
 
-    params['pretrain_load_path'] = '../../data/proc/imdb/pretrain_lm1.pkl'
+    params['pretrain_load_path'] = '../../data/proc/imdb/pretrain_lm2.pkl'
     params['use_final'] = True
     return params
 

@@ -48,7 +48,7 @@ class RnnClf:
             self.l_rnn = self.l_enc
             self.l_enc = MeanLayer(self.l_enc, self.l_m)
         
-        self.l_y = layers.DenseLayer(self.l_enc, 30, nonlinearity=nonlinearities.rectify)
+        self.l_y = layers.DenseLayer(self.l_enc, 30, nonlinearity=nonlinearities.softmax)
         self.l_y = layers.dropout(self.l_y)
 
         self.l_y = layers.DenseLayer(self.l_y, n_classes, nonlinearity=nonlinearities.softmax)
