@@ -1,7 +1,7 @@
 '''
 Author Wead-Hsu, wead-hsu@github
-The implementation for paper tilted with 'semi-supervised
-learning with deep generative methods'.
+The implementation for paper tilted with '
+Variational Autoencoder for Semi-supervised Text Classification'.
 '''
 
 import sys
