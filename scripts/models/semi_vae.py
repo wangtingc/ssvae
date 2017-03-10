@@ -16,7 +16,7 @@ from lasagne import objectives
 from lasagne import init
 from lasagne import regularization
 from theano.sandbox.rng_mrg import MRG_RandomStreams
-from helper_layers.sc_lstm import ScLSTMLayer
+from helper_layers.sc_lstm_2 import ScLSTMLayer
 from helper_layers.helper_layers import *
 
 

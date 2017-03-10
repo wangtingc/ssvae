@@ -120,7 +120,8 @@ def prepare_data(x, n_seq = None, l_seq = None):
     for i, s in enumerate(x):
         xx[i, :x_len[i]] = x[i]
         m[i, :x_len[i] + 1] = 1
-
+    
+    '''
     if (n_seq or l_seq) and max_len > 200:
         xx = xx[:, :300]
         m = m[:, :300]
@@ -128,6 +129,7 @@ def prepare_data(x, n_seq = None, l_seq = None):
     if not(n_seq or l_seq) and max_len > 1000:
         xx = xx[:, :1000]
         m = m[:, :1000]
+    '''
 
     return xx, m
 

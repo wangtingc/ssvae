@@ -1,3 +1,2 @@
-This project is the semisupervised VAE for sentence classification.
-
+Variational Autoencoder for Semi-supervised Text Classification
 
